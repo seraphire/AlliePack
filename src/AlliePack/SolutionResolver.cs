@@ -155,10 +155,4 @@ namespace AlliePack
             }
         }
     }
-
-    public class ResolvedFile
-    {
-        public string SourcePath { get; set; } = string.Empty;
-        public string RelativeDestinationPath { get; set; } = string.Empty;
-    }
 }

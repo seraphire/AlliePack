@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using WixSharp;
 using YamlDotNet.Serialization;
+using Microsoft.Extensions.FileSystemGlobbing;
 using File = WixSharp.File;
 
 namespace AlliePack
@@ -25,6 +26,15 @@ namespace AlliePack
 
         public void Build()
         {
+            var allFiles = new List<ResolvedFile>();
+            foreach (var element in _config.Structure)
+            {
+                allFiles.AddRange(ProcessElement(element));
+            }
+
+            // Deduplicate
+            var uniqueFiles = DeduplicateFiles(allFiles);
+
             var entities = new List<WixEntity>();
             string installPath = _config.Product.InstallDir ?? (_config.Product.Manufacturer + "\\" + _config.Product.Name);
             if (!installPath.Contains("[") && !Path.IsPathRooted(installPath))
@@ -34,16 +44,14 @@ namespace AlliePack
             
             var installDir = new InstallDir(installPath);
             entities.Add(installDir);
-            
-            foreach (var element in _config.Structure)
+
+            // Convert to WixSharp hierarchy
+            var hierarchy = ConvertResolvedFilesToEntities(uniqueFiles);
+            foreach (var entity in hierarchy)
             {
-                var processed = ProcessElement(element);
-                foreach (var entity in processed)
-                {
-                    if (entity is Dir childDir) installDir.Dirs = installDir.Dirs.Concat(new[] { childDir }).ToArray();
-                    else if (entity is File childFile) installDir.Files = installDir.Files.Concat(new[] { childFile }).ToArray();
-                    else entities.Add(entity);
-                }
+                if (entity is Dir childDir) installDir.Dirs = installDir.Dirs.Concat(new[] { childDir }).ToArray();
+                else if (entity is File childFile) installDir.Files = installDir.Files.Concat(new[] { childFile }).ToArray();
+                else entities.Add(entity);
             }
 
             var project = new Project(_config.Product.Name, entities.ToArray());
@@ -72,80 +80,139 @@ namespace AlliePack
             }
         }
 
-        private List<WixEntity> ProcessElement(StructureElement element)
+        private List<ResolvedFile> DeduplicateFiles(List<ResolvedFile> files)
         {
-            var result = new List<WixEntity>();
+            var dict = new Dictionary<string, ResolvedFile>(StringComparer.OrdinalIgnoreCase);
+            int duplicateCount = 0;
+
+            foreach (var file in files)
+            {
+                string key = file.RelativeDestinationPath.Replace('/', '\\').TrimStart('\\');
+                if (dict.TryGetValue(key, out var existing))
+                {
+                    // Check if they are the same file
+                    if (IsSameFile(file.SourcePath, existing.SourcePath))
+                    {
+                        duplicateCount++;
+                        continue; 
+                    }
+                    
+                    // If they are different, we'll take the one from the most recent project (last one in the list)
+                    // or maybe we should keep both? No, they go to the same destination.
+                    // We'll replace and log it if verbose.
+                    if (_options.Verbose)
+                    {
+                        Console.WriteLine($"Warning: Different files found for '{key}'. Keeping '{file.SourcePath}'.");
+                    }
+                    dict[key] = file;
+                }
+                else
+                {
+                    dict[key] = file;
+                }
+            }
+
+            if (duplicateCount > 0)
+            {
+                Console.WriteLine($"Removed {duplicateCount} duplicate files.");
+            }
+
+            return dict.Values.ToList();
+        }
+
+        private bool IsSameFile(string path1, string path2)
+        {
+            if (path1.Equals(path2, StringComparison.OrdinalIgnoreCase)) return true;
+            
+            var fi1 = new FileInfo(path1);
+            var fi2 = new FileInfo(path2);
+
+            if (!fi1.Exists || !fi2.Exists) return false;
+            if (fi1.Length != fi2.Length) return false;
+
+            // For AlliePack purposes, same size and name is usually the same file from different build folders.
+            // A more robust check would be MD5, but size is a good heuristic for now.
+            return true;
+        }
+
+        private List<ResolvedFile> ProcessElement(StructureElement element, string currentPath = "")
+        {
+            var result = new List<ResolvedFile>();
+            
+            string newPath = currentPath;
             if (!string.IsNullOrEmpty(element.FolderName))
             {
-                var dir = new Dir(element.FolderName);
-                if (element.Contents != null)
-                {
-                    foreach (var child in element.Contents)
-                    {
-                        var childEntities = ProcessElement(child);
-                        foreach (var entity in childEntities)
-                        {
-                            if (entity is Dir childDir) dir.Dirs = dir.Dirs.Concat(new[] { childDir }).ToArray();
-                            if (entity is File childFile) dir.Files = dir.Files.Concat(new[] { childFile }).ToArray();
-                        }
-                    }
-                }
-                result.Add(dir);
+                newPath = Path.Combine(currentPath, element.FolderName);
             }
-            else if (!string.IsNullOrEmpty(element.Source))
+
+            if (element.Contents != null)
             {
-                // Resolve the source path (could be a glob)
+                foreach (var child in element.Contents)
+                {
+                    result.AddRange(ProcessElement(child, newPath));
+                }
+            }
+
+            if (!string.IsNullOrEmpty(element.Source))
+            {
                 var files = _resolver.ResolveGlob(element.Source);
                 
-                // Filter files
+                // Exclusions
                 if (element.ExcludeFiles.Count > 0)
                 {
-                    var matcher = new Microsoft.Extensions.FileSystemGlobbing.Matcher();
+                    var matcher = new Matcher();
                     matcher.AddInclude("**/*");
                     foreach (var exc in element.ExcludeFiles) matcher.AddExclude(exc);
                     
                     files = files.Where(f => {
-                        var fileInfo = new FileInfo(f);
-                        // For matcher on absolute paths, we need a base. 
-                        // But since these are files from a glob, we can just match the filename if the pattern is simple,
-                        // or better, use the directory as base.
                         string? dir = Path.GetDirectoryName(f);
                         if (dir == null) return true;
-                        var resultMatch = matcher.Execute(new Microsoft.Extensions.FileSystemGlobbing.Abstractions.DirectoryInfoWrapper(new DirectoryInfo(dir)));
-                        return resultMatch.Files.Any(m => Path.Combine(dir, m.Path).Equals(f, StringComparison.OrdinalIgnoreCase));
+                        var res = matcher.Execute(new Microsoft.Extensions.FileSystemGlobbing.Abstractions.DirectoryInfoWrapper(new DirectoryInfo(dir)));
+                        return res.Files.Any(m => Path.Combine(dir, m.Path).Equals(f, StringComparison.OrdinalIgnoreCase));
                     }).ToList();
                 }
 
                 if (files.Count == 0)
                 {
-                    if (string.IsNullOrEmpty(element.Source)) return result;
-                    if (element.Source.Contains("*") || element.Source.Contains("?")) return result; // Don't add literal wildcards
-                    result.Add(new File(_resolver.Resolve(element.Source)));
+                    if (!string.IsNullOrEmpty(element.Source) && !element.Source.Contains("*") && !element.Source.Contains("?"))
+                    {
+                        string sourcePath = _resolver.Resolve(element.Source);
+                        result.Add(new ResolvedFile { 
+                            SourcePath = sourcePath, 
+                            RelativeDestinationPath = Path.Combine(newPath, Path.GetFileName(sourcePath)) 
+                        });
+                    }
                 }
                 else
                 {
                     foreach (var f in files)
                     {
-                        result.Add(new File(f));
+                        result.Add(new ResolvedFile { 
+                            SourcePath = f, 
+                            RelativeDestinationPath = Path.Combine(newPath, Path.GetFileName(f)) 
+                        });
                     }
                 }
             }
             else if (!string.IsNullOrEmpty(element.Solution))
             {
-                var sol = element.Solution!;
-                var files = _solutionResolver.ResolveSolution(sol, element.Configuration, element.Platform, element.ExcludeProjects, element.ExcludeFiles);
-                result.AddRange(ConvertResolvedFilesToEntities(files));
+                var solFiles = _solutionResolver.ResolveSolution(element.Solution, element.Configuration, element.Platform, element.ExcludeProjects, element.ExcludeFiles);
+                foreach (var f in solFiles)
+                {
+                    f.RelativeDestinationPath = Path.Combine(newPath, f.RelativeDestinationPath);
+                }
+                result.AddRange(solFiles);
             }
             else if (!string.IsNullOrEmpty(element.Project))
             {
-                var proj = element.Project!;
-                var files = _solutionResolver.ResolveProject(proj, element.Configuration, element.Platform, element.ExcludeFiles);
-                result.AddRange(ConvertResolvedFilesToEntities(files));
+                var projFiles = _solutionResolver.ResolveProject(element.Project, element.Configuration, element.Platform, element.ExcludeFiles);
+                foreach (var f in projFiles)
+                {
+                    f.RelativeDestinationPath = Path.Combine(newPath, f.RelativeDestinationPath);
+                }
+                result.AddRange(projFiles);
             }
-            else
-            {
-                throw new Exception("Invalid structure element: must have folder, source, solution or project.");
-            }
+
             return result;
         }
 
