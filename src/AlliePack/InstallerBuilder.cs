@@ -72,7 +72,7 @@ namespace AlliePack
 
             if (_options.ReportOnly)
             {
-                GenerateReport(project);
+                GenerateReport(project, entities);
             }
             else
             {
@@ -268,7 +268,7 @@ namespace AlliePack
             return @new;
         }
 
-        private void GenerateReport(Project project)
+        private void GenerateReport(Project project, List<WixEntity> entities)
         {
             Console.WriteLine("--- AlliePack MSI Content Report ---");
             Console.WriteLine($"Product: {project.Name}");
@@ -277,26 +277,35 @@ namespace AlliePack
             Console.WriteLine($"UpgradeCode: {project.GUID}");
             Console.WriteLine("------------------------------------");
             
-            // Simple flat print for now using AllFiles/AllDirs
-            foreach (var dir in project.AllDirs)
+            foreach (var entity in entities)
             {
-                Console.WriteLine($"[Folder] {dir.Name}");
-            }
-            foreach (var file in project.AllFiles)
-            {
-                Console.WriteLine($"[File] {file.Name}");
+                PrintEntity(entity, 0);
             }
         }
 
-        private void PrintWixEntity(WixEntity entity, int indent)
+        private void PrintEntity(WixEntity entity, int indent)
         {
-             // Not used anymore in this version
-        }
-
-        private void PrintDir(string name, int indent)
-        {
-             string space = new string(' ', indent * 2);
-             Console.WriteLine($"{space}[Root] {name}");
+            string space = new string(' ', indent * 2);
+            if (entity is Dir dir)
+            {
+                Console.WriteLine($"{space}[Folder] {dir.Name}");
+                foreach (var childDir in dir.Dirs)
+                {
+                    PrintEntity(childDir, indent + 1);
+                }
+                foreach (var childFile in dir.Files)
+                {
+                    PrintEntity(childFile, indent + 1);
+                }
+            }
+            else if (entity is File file)
+            {
+                // In WixSharp, File.Name usually contains the source path unless explicitly set.
+                // We'll try to show a clean name if possible.
+                string fileName = file.Name;
+                if (Path.IsPathRooted(fileName)) fileName = Path.GetFileName(fileName);
+                Console.WriteLine($"{space}[File] {fileName}");
+            }
         }
     }
 }
