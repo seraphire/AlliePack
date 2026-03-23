@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.37027.9
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AlliePack", "AlliePack\AlliePack.csproj", "{D1CA48F9-080D-4E8B-81F5-2A398C793CF9}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{D1CA48F9-080D-4E8B-81F5-2A398C793CF9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D1CA48F9-080D-4E8B-81F5-2A398C793CF9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D1CA48F9-080D-4E8B-81F5-2A398C793CF9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D1CA48F9-080D-4E8B-81F5-2A398C793CF9}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {3B5093B2-49FE-4EE2-9152-80E7451256BA}
+	EndGlobalSection
+EndGlobal

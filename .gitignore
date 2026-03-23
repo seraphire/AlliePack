@@ -1,0 +1,10 @@
+﻿*.msi
+*.wixpdb
+*.wxs
+**/.vs
+**/bin
+**/obj
+build*.log
+build*.txt
+errors*.txt
+**/.cr

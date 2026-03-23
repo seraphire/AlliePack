@@ -1,0 +1,16 @@
+product:
+  name: "AlliePack Test"
+  manufacturer: "Antigravity"
+  version: "0.1.0"
+  description: "Test installer for AlliePack"
+  upgradeCode: "28e08d6c-67c8-47e1-95c5-0e6e7686588a"
+  installScope: "perMachine"
+
+aliases:
+  bin: "src/AlliePack/bin/Debug/net481"
+
+structure:
+  - folder: "InstallDir"
+    contents:
+      - source: "bin:AlliePack.exe"
+      - source: "bin:YamlDotNet.dll"
