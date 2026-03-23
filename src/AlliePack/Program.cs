@@ -35,7 +35,8 @@ namespace AlliePack
                 var config = deserializer.Deserialize<AlliePackConfig>(yaml);
 
                 var resolver = new PathResolver(options.ConfigPath, config.Aliases);
-                var builder = new InstallerBuilder(config, resolver, options);
+                var solutionResolver = new SolutionResolver(resolver);
+                var builder = new InstallerBuilder(config, resolver, solutionResolver, options);
 
                 Console.WriteLine($"Building MSI for {config.Product.Name} v{config.Product.Version}...");
                 builder.Build();

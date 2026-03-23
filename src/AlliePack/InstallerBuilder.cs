@@ -12,12 +12,14 @@ namespace AlliePack
     {
         private readonly AlliePackConfig _config;
         private readonly PathResolver _resolver;
+        private readonly SolutionResolver _solutionResolver;
         private readonly Options _options;
 
-        public InstallerBuilder(AlliePackConfig config, PathResolver resolver, Options options)
+        public InstallerBuilder(AlliePackConfig config, PathResolver resolver, SolutionResolver solutionResolver, Options options)
         {
             _config = config;
             _resolver = resolver;
+            _solutionResolver = solutionResolver;
             _options = options;
         }
 
@@ -81,9 +83,30 @@ namespace AlliePack
             {
                 // Resolve the source path (could be a glob)
                 var files = _resolver.ResolveGlob(element.Source);
+                
+                // Filter files
+                if (element.ExcludeFiles.Count > 0)
+                {
+                    var matcher = new Microsoft.Extensions.FileSystemGlobbing.Matcher();
+                    matcher.AddInclude("**/*");
+                    foreach (var exc in element.ExcludeFiles) matcher.AddExclude(exc);
+                    
+                    files = files.Where(f => {
+                        var fileInfo = new FileInfo(f);
+                        // For matcher on absolute paths, we need a base. 
+                        // But since these are files from a glob, we can just match the filename if the pattern is simple,
+                        // or better, use the directory as base.
+                        string? dir = Path.GetDirectoryName(f);
+                        if (dir == null) return true;
+                        var resultMatch = matcher.Execute(new Microsoft.Extensions.FileSystemGlobbing.Abstractions.DirectoryInfoWrapper(new DirectoryInfo(dir)));
+                        return resultMatch.Files.Any(m => Path.Combine(dir, m.Path).Equals(f, StringComparison.OrdinalIgnoreCase));
+                    }).ToList();
+                }
+
                 if (files.Count == 0)
                 {
-                    // Fallback to direct resolution if no files found (might be a single non-existent file)
+                    if (string.IsNullOrEmpty(element.Source)) return result;
+                    if (element.Source.Contains("*") || element.Source.Contains("?")) return result; // Don't add literal wildcards
                     result.Add(new File(_resolver.Resolve(element.Source)));
                 }
                 else
@@ -94,11 +117,75 @@ namespace AlliePack
                     }
                 }
             }
+            else if (!string.IsNullOrEmpty(element.Solution))
+            {
+                var sol = element.Solution!;
+                var files = _solutionResolver.ResolveSolution(sol, element.Configuration, element.Platform, element.ExcludeProjects, element.ExcludeFiles);
+                result.AddRange(ConvertResolvedFilesToEntities(files));
+            }
+            else if (!string.IsNullOrEmpty(element.Project))
+            {
+                var proj = element.Project!;
+                var files = _solutionResolver.ResolveProject(proj, element.Configuration, element.Platform, element.ExcludeFiles);
+                result.AddRange(ConvertResolvedFilesToEntities(files));
+            }
             else
             {
-                throw new Exception("Invalid structure element: must have folder or source.");
+                throw new Exception("Invalid structure element: must have folder, source, solution or project.");
             }
             return result;
+        }
+
+        private List<WixEntity> ConvertResolvedFilesToEntities(List<ResolvedFile> files)
+        {
+            // This needs to group by directory structure
+            var rootDirs = new List<Dir>();
+            var rootFiles = new List<File>();
+
+            foreach (var file in files)
+            {
+                string relPath = file.RelativeDestinationPath;
+                string[] parts = relPath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                
+                if (parts.Length == 1)
+                {
+                    rootFiles.Add(new File(file.SourcePath));
+                }
+                else
+                {
+                    // Navigate/Create Dir structure
+                    Dir current = GetOrCreateDir(rootDirs, parts[0]);
+                    for (int i = 1; i < parts.Length - 1; i++)
+                    {
+                        current = GetOrCreateDir(current, parts[i]);
+                    }
+                    var wixFile = new File(file.SourcePath);
+                    current.Files = current.Files.Concat(new[] { wixFile }).ToArray();
+                }
+            }
+
+            var result = new List<WixEntity>();
+            result.AddRange(rootDirs);
+            result.AddRange(rootFiles);
+            return result;
+        }
+
+        private Dir GetOrCreateDir(List<Dir> list, string name)
+        {
+            var existing = list.FirstOrDefault(d => d.Name == name);
+            if (existing != null) return existing;
+            var @new = new Dir(name);
+            list.Add(@new);
+            return @new;
+        }
+
+        private Dir GetOrCreateDir(Dir parent, string name)
+        {
+            var existing = parent.Dirs.FirstOrDefault(d => d.Name == name);
+            if (existing != null) return existing;
+            var @new = new Dir(name);
+            parent.Dirs = parent.Dirs.Concat(new[] { @new }).ToArray();
+            return @new;
         }
 
         private void GenerateReport(Project project)

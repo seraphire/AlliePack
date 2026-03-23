@@ -1,0 +1,27 @@
+product:
+  name: AllieTest V2
+  manufacturer: gmTools
+  version: 2.0.0
+  description: Test for solution support
+  upgradeCode: 12345678-1234-1234-1234-123456781234
+
+structure:
+  - folder: bin
+    contents:
+      - solution: test/TestSolution/TestSolution.sln
+        configuration: Debug
+        platform: AnyCPU
+        excludeProjects:
+          - ProjectA
+        excludeFiles:
+          - "*.pdb"
+          - "B.resources.dll" # Exclude localization file for testing
+      - project: test/TestSolution/ProjectA/ProjectA.csproj
+        configuration: Debug
+        excludeFiles:
+          - "A.dll"
+      - folder: extras
+        contents:
+          - source: "test/TestSolution/ProjectB/bin/Debug/*"
+            excludeFiles:
+              - "B.dll"

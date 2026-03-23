@@ -42,7 +42,11 @@ namespace AlliePack
             // If path is relative, make it relative to YamlDir
             if (!Path.IsPathRooted(path))
             {
-                path = Path.GetFullPath(Path.Combine(_yamlDir, path));
+                path = Path.Combine(_yamlDir, path);
+                if (!path.Contains("*") && !path.Contains("?"))
+                {
+                    path = Path.GetFullPath(path);
+                }
             }
 
             return path;

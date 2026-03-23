@@ -37,6 +37,24 @@ namespace AlliePack
         [YamlMember(Alias = "source")]
         public string? Source { get; set; }
 
+        [YamlMember(Alias = "solution")]
+        public string? Solution { get; set; }
+
+        [YamlMember(Alias = "project")]
+        public string? Project { get; set; }
+
+        [YamlMember(Alias = "configuration")]
+        public string Configuration { get; set; } = "Release";
+
+        [YamlMember(Alias = "platform")]
+        public string Platform { get; set; } = "Any CPU";
+
+        [YamlMember(Alias = "excludeProjects")]
+        public List<string> ExcludeProjects { get; set; } = new();
+
+        [YamlMember(Alias = "excludeFiles")]
+        public List<string> ExcludeFiles { get; set; } = new();
+
         [YamlMember(Alias = "contents")]
         public List<StructureElement>? Contents { get; set; }
     }

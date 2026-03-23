@@ -75,4 +75,6 @@ structure:
 
 ## License
 
-Copyright (c) 2026 Antigravity.
+MIT Licensed.  
+
+Designed with the help of Antigravity AI.
