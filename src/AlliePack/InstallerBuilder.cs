@@ -26,11 +26,24 @@ namespace AlliePack
         public void Build()
         {
             var entities = new List<WixEntity>();
-            entities.Add(new InstallDir(@"[ProgramFilesFolder]\" + _config.Product.Manufacturer + "\\" + _config.Product.Name));
+            string installPath = _config.Product.InstallDir ?? (_config.Product.Manufacturer + "\\" + _config.Product.Name);
+            if (!installPath.Contains("[") && !Path.IsPathRooted(installPath))
+            {
+                installPath = Path.Combine("[ProgramFilesFolder]", installPath);
+            }
+            
+            var installDir = new InstallDir(installPath);
+            entities.Add(installDir);
             
             foreach (var element in _config.Structure)
             {
-                entities.AddRange(ProcessElement(element));
+                var processed = ProcessElement(element);
+                foreach (var entity in processed)
+                {
+                    if (entity is Dir childDir) installDir.Dirs = installDir.Dirs.Concat(new[] { childDir }).ToArray();
+                    else if (entity is File childFile) installDir.Files = installDir.Files.Concat(new[] { childFile }).ToArray();
+                    else entities.Add(entity);
+                }
             }
 
             var project = new Project(_config.Product.Name, entities.ToArray());

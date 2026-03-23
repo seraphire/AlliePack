@@ -24,6 +24,9 @@ namespace AlliePack
         public string Description { get; set; } = string.Empty;
         public string UpgradeCode { get; set; } = Guid.NewGuid().ToString();
         public string InstallScope { get; set; } = "perMachine"; // perMachine or perUser
+
+        [YamlMember(Alias = "installDir")]
+        public string? InstallDir { get; set; }
     }
 
     public class StructureElement
