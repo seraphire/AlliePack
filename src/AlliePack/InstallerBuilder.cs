@@ -26,6 +26,7 @@ namespace AlliePack
 
         public void Build()
         {
+            WixExtension.UI.PreferredVersion = "6.0.2";
             var allFiles = new List<ResolvedFile>();
             foreach (var element in _config.Structure)
             {
