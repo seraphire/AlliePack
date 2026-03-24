@@ -281,13 +281,10 @@ namespace AlliePack
                     string? sfn = GenerateShortName(fileName, seenNames[""]);
                     if (sfn != null)
                     {
-                        wixFile.Name = $"{sfn}|{fileName}";
+                        wixFile.AttributesDefinition = $"ShortName={sfn}";
                         seenNames[""].Add(sfn);
                     }
-                    else
-                    {
-                        wixFile.Name = fileName;
-                    }
+                    wixFile.Name = fileName;
                     rootFiles.Add(wixFile);
                 }
                 else
@@ -310,13 +307,10 @@ namespace AlliePack
                     string? sfn = GenerateShortName(fileName, seenNames[currentPath]);
                     if (sfn != null)
                     {
-                        wixFile.Name = $"{sfn}|{fileName}";
+                        wixFile.AttributesDefinition = $"ShortName={sfn}";
                         seenNames[currentPath].Add(sfn);
                     }
-                    else
-                    {
-                        wixFile.Name = fileName;
-                    }
+                    wixFile.Name = fileName;
                     
                     current.Files = (current.Files ?? new File[0]).Concat(new[] { wixFile }).ToArray();
                 }
@@ -330,7 +324,7 @@ namespace AlliePack
 
         private Dir GetOrCreateDir(List<Dir> list, string name, HashSet<string> seen)
         {
-            var existing = list.FirstOrDefault(d => d.Name == name || d.Name.EndsWith("|" + name));
+            var existing = list.FirstOrDefault(d => d.Name == name);
             if (existing != null) return existing;
             
             var @new = new Dir(name);
@@ -339,7 +333,7 @@ namespace AlliePack
                 string? sfn = GenerateShortName(name, seen);
                 if (sfn != null)
                 {
-                    @new.Name = $"{sfn}|{name}";
+                    @new.AttributesDefinition = $"ShortName={sfn}";
                     seen.Add(sfn);
                 }
             }
@@ -349,7 +343,7 @@ namespace AlliePack
 
         private Dir GetOrCreateDir(Dir parent, string name, HashSet<string> seen)
         {
-            var existing = (parent.Dirs ?? new Dir[0]).FirstOrDefault(d => d.Name == name || d.Name.EndsWith("|" + name));
+            var existing = (parent.Dirs ?? new Dir[0]).FirstOrDefault(d => d.Name == name);
             if (existing != null) return existing;
             
             var @new = new Dir(name);
@@ -358,7 +352,7 @@ namespace AlliePack
                 string? sfn = GenerateShortName(name, seen);
                 if (sfn != null)
                 {
-                    @new.Name = $"{sfn}|{name}";
+                    @new.AttributesDefinition = $"ShortName={sfn}";
                     seen.Add(sfn);
                 }
             }
@@ -423,7 +417,6 @@ namespace AlliePack
             if (entity is Dir dir)
             {
                 string displayName = dir.Name;
-                if (displayName.Contains("|")) displayName = displayName.Split('|')[1];
                 Console.WriteLine($"{space}[Folder] {displayName}");
                 foreach (var childDir in dir.Dirs)
                 {
@@ -437,7 +430,6 @@ namespace AlliePack
             else if (entity is File file)
             {
                 string displayName = file.Name;
-                if (displayName.Contains("|")) displayName = displayName.Split('|')[1];
                 if (Path.IsPathRooted(displayName)) displayName = Path.GetFileName(displayName);
                 Console.WriteLine($"{space}[File] {displayName}");
             }
