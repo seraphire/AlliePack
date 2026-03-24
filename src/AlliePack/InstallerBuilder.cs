@@ -93,6 +93,15 @@ namespace AlliePack
 
             var project = new Project(_config.Product.Name, entities.ToArray());
 
+            if (_config.Product.Platform.Equals("x64", StringComparison.OrdinalIgnoreCase))
+            {
+                project.Platform = Platform.x64;
+            }
+            else if (_config.Product.Platform.Equals("arm64", StringComparison.OrdinalIgnoreCase))
+            {
+                project.Platform = Platform.arm64;
+            }
+
             project.GUID = new Guid(_config.Product.UpgradeCode);
             project.ControlPanelInfo.Manufacturer = _config.Product.Manufacturer;
             project.Description = _config.Product.Description;

@@ -27,6 +27,8 @@ namespace AlliePack
 
         [YamlMember(Alias = "installDir")]
         public string? InstallDir { get; set; }
+
+        public string Platform { get; set; } = "x86"; // x86, x64, arm64
     }
 
     public class StructureElement
