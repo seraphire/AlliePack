@@ -14,6 +14,18 @@ namespace AlliePack
 
         [YamlMember(Alias = "structure")]
         public List<StructureElement> Structure { get; set; } = new();
+
+        [YamlMember(Alias = "shortcuts")]
+        public List<ShortcutInfo> Shortcuts { get; set; } = new();
+    }
+
+    public class ShortcutInfo
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Target { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public string? Icon { get; set; }
+        public string Folder { get; set; } = string.Empty;
     }
 
     public class ProductInfo

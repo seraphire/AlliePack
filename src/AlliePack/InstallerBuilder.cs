@@ -73,7 +73,7 @@ namespace AlliePack
             }
 
             // Convert to WixSharp hierarchy
-            var hierarchy = ConvertResolvedFilesToEntities(uniqueFiles);
+            var (hierarchy, fileMap) = ConvertResolvedFilesToEntities(uniqueFiles, installPath);
             foreach (var entity in hierarchy)
             {
                 if (entity is Dir childDir) 
@@ -90,6 +90,25 @@ namespace AlliePack
                 }
             }
             entities.Add(rootDir);
+
+            // Process Shortcuts
+            foreach (var s in _config.Shortcuts)
+            {
+                string targetPath = ResolvePath(s.Target, installPath);
+                if (fileMap.TryGetValue(targetPath, out var wixFile))
+                {
+                    string folder = ResolveFolder(s.Folder);
+                    var shortcut = new FileShortcut(s.Name, folder)
+                    {
+                        Description = s.Description
+                    };
+                    wixFile.Shortcuts = (wixFile.Shortcuts ?? new FileShortcut[0]).Concat(new[] { shortcut }).ToArray();
+                }
+                else
+                {
+                    Console.WriteLine($"Warning: Shortcut target not found: {s.Target} (Resolved to: {targetPath})");
+                }
+            }
 
             var project = new Project(_config.Product.Name, entities.ToArray());
 
@@ -265,16 +284,18 @@ namespace AlliePack
             return result;
         }
 
-        private List<WixEntity> ConvertResolvedFilesToEntities(List<ResolvedFile> files)
+        private (List<WixEntity> entities, Dictionary<string, File> fileMap) ConvertResolvedFilesToEntities(List<ResolvedFile> files, string installPath)
         {
             var rootDirs = new List<Dir>();
             var rootFiles = new List<File>();
+            var fileMap = new Dictionary<string, File>(StringComparer.OrdinalIgnoreCase);
             var seenNames = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
             seenNames[""] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var file in files)
             {
                 string relPath = file.RelativeDestinationPath;
+                string fullDestPath = Path.Combine(installPath, relPath);
                 string[] parts = relPath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
                 
                 if (parts.Length == 1)
@@ -288,6 +309,7 @@ namespace AlliePack
                         seenNames[""].Add(sfn);
                     }
                     rootFiles.Add(wixFile);
+                    fileMap[fullDestPath] = wixFile;
                 }
                 else
                 {
@@ -314,13 +336,14 @@ namespace AlliePack
                     }
                     
                     current.Files = (current.Files ?? new File[0]).Concat(new[] { wixFile }).ToArray();
+                    fileMap[fullDestPath] = wixFile;
                 }
             }
 
-            var result = new List<WixEntity>();
-            result.AddRange(rootDirs);
-            result.AddRange(rootFiles);
-            return result;
+            var entities = new List<WixEntity>();
+            entities.AddRange(rootDirs);
+            entities.AddRange(rootFiles);
+            return (entities, fileMap);
         }
 
         private Dir GetOrCreateDir(List<Dir> list, string name, HashSet<string> seen)
@@ -397,6 +420,73 @@ namespace AlliePack
             }
         }
 
+        private string ResolvePath(string path, string installPath)
+        {
+            string result = path.Replace('/', '\\');
+            int searchPos = 0;
+
+            while (true)
+            {
+                int start = result.IndexOf('[', searchPos);
+                if (start == -1) break;
+                int end = result.IndexOf(']', start);
+                if (end == -1) break;
+
+                string alias = result.Substring(start, end - start + 1);
+                string? replacement = null;
+
+                if (alias.Equals("[INSTALLDIR]", StringComparison.OrdinalIgnoreCase))
+                {
+                    replacement = installPath;
+                }
+                else if (_config.Aliases.TryGetValue(alias.Trim('[', ']'), out string? value))
+                {
+                    replacement = value;
+                }
+                else if (IsStandardWixProperty(alias))
+                {
+                    // Stay as is, just move past it
+                    searchPos = end + 1;
+                    continue;
+                }
+                else
+                {
+                    throw new Exception($"Invalid or unknown alias: {alias}");
+                }
+
+                if (replacement != null)
+                {
+                    result = result.Substring(0, start) + replacement + result.Substring(end + 1);
+                    // If replacement contains the same alias, move past it to avoid loop
+                    if (replacement.IndexOf(alias, StringComparison.OrdinalIgnoreCase) != -1)
+                        searchPos = start + replacement.Length;
+                }
+            }
+
+            return result;
+        }
+
+        private string ResolveFolder(string folder)
+        {
+            string result = folder.Replace('/', '\\');
+            
+            // Map common properties to WixSharp format (%)
+            if (result.StartsWith("[ProgramMenuFolder]", StringComparison.OrdinalIgnoreCase))
+                result = "%ProgramMenu%" + result.Substring("[ProgramMenuFolder]".Length);
+            else if (result.StartsWith("[Desktop]", StringComparison.OrdinalIgnoreCase))
+                result = "%Desktop%" + result.Substring("[Desktop]".Length);
+            else if (result.StartsWith("[DesktopFolder]", StringComparison.OrdinalIgnoreCase))
+                result = "%Desktop%" + result.Substring("[DesktopFolder]".Length);
+            
+            return result;
+        }
+
+        private bool IsStandardWixProperty(string alias)
+        {
+            string[] standard = { "[ProgramFilesFolder]", "[ProgramFiles64Folder]", "[CommonFilesFolder]", "[AppDataFolder]", "[LocalAppDataFolder]", "[ProgramMenuFolder]", "[DesktopFolder]", "[TempFolder]" };
+            return standard.Any(s => s.Equals(alias, StringComparison.OrdinalIgnoreCase));
+        }
+
         private void GenerateReport(Project project, List<WixEntity> entities)
         {
             Console.WriteLine("--- AlliePack MSI Content Report ---");
@@ -433,6 +523,13 @@ namespace AlliePack
                 string displayName = file.Name;
                 if (Path.IsPathRooted(displayName)) displayName = Path.GetFileName(displayName);
                 Console.WriteLine($"{space}[File] {displayName}");
+                if (file.Shortcuts != null)
+                {
+                    foreach (var s in file.Shortcuts)
+                    {
+                        Console.WriteLine($"{space}  (Shortcut) {s.Name}");
+                    }
+                }
             }
         }
     }
