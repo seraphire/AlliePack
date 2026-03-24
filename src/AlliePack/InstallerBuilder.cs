@@ -39,9 +39,26 @@ namespace AlliePack
             var entities = new List<WixEntity>();
             string installPath = _config.Product.InstallDir ?? (_config.Product.Manufacturer + "\\" + _config.Product.Name);
             installPath = installPath.Replace('/', '\\');
+            
+            bool is64 = _config.Product.Platform.Equals("x64", StringComparison.OrdinalIgnoreCase) || 
+                        _config.Product.Platform.Equals("arm64", StringComparison.OrdinalIgnoreCase);
+
+            if (installPath.StartsWith("[ProgramFilesFolder]", StringComparison.OrdinalIgnoreCase))
+            {
+                // If they explicitly used [ProgramFilesFolder] but platform is x64, should we switch it? 
+                // Maybe not, they might want x86 folder. 
+                // But [ProgramFiles] is our own alias, so we can be smart.
+            }
+
             if (installPath.StartsWith("[ProgramFiles]\\", StringComparison.OrdinalIgnoreCase))
             {
-                installPath = "[ProgramFilesFolder]\\" + installPath.Substring("[ProgramFiles]\\".Length);
+                string pfFolder = is64 ? "[ProgramFiles64Folder]" : "[ProgramFilesFolder]";
+                installPath = pfFolder + "\\" + installPath.Substring("[ProgramFiles]\\".Length);
+            }
+            else if (installPath.StartsWith("[ProgramFilesFolder]\\", StringComparison.OrdinalIgnoreCase) && is64)
+            {
+                // The user explicitly used [ProgramFilesFolder] but they are in x64 mode.
+                // We'll trust them, but if they want the standard behavior for AnyCPU we can warn.
             }
 
             if (!installPath.Contains("[") && !Path.IsPathRooted(installPath))
