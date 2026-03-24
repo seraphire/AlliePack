@@ -264,9 +264,10 @@ namespace AlliePack
 
         private List<WixEntity> ConvertResolvedFilesToEntities(List<ResolvedFile> files)
         {
-            // This needs to group by directory structure
             var rootDirs = new List<Dir>();
             var rootFiles = new List<File>();
+            var seenNames = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+            seenNames[""] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var file in files)
             {
@@ -275,18 +276,49 @@ namespace AlliePack
                 
                 if (parts.Length == 1)
                 {
-                    rootFiles.Add(new File(file.SourcePath));
+                    var wixFile = new File(file.SourcePath);
+                    string fileName = Path.GetFileName(file.SourcePath);
+                    string? sfn = GenerateShortName(fileName, seenNames[""]);
+                    if (sfn != null)
+                    {
+                        wixFile.Name = $"{sfn}|{fileName}";
+                        seenNames[""].Add(sfn);
+                    }
+                    else
+                    {
+                        wixFile.Name = fileName;
+                    }
+                    rootFiles.Add(wixFile);
                 }
                 else
                 {
                     // Navigate/Create Dir structure
-                    Dir current = GetOrCreateDir(rootDirs, parts[0]);
+                    string currentPath = parts[0];
+                    Dir current = GetOrCreateDir(rootDirs, parts[0], seenNames[""]);
+                    
                     for (int i = 1; i < parts.Length - 1; i++)
                     {
-                        current = GetOrCreateDir(current, parts[i]);
+                        string parentPath = currentPath;
+                        currentPath = Path.Combine(currentPath, parts[i]);
+                        if (!seenNames.ContainsKey(parentPath)) seenNames[parentPath] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        current = GetOrCreateDir(current, parts[i], seenNames[parentPath]);
                     }
+                    
+                    if (!seenNames.ContainsKey(currentPath)) seenNames[currentPath] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     var wixFile = new File(file.SourcePath);
-                    current.Files = current.Files.Concat(new[] { wixFile }).ToArray();
+                    string fileName = Path.GetFileName(file.SourcePath);
+                    string? sfn = GenerateShortName(fileName, seenNames[currentPath]);
+                    if (sfn != null)
+                    {
+                        wixFile.Name = $"{sfn}|{fileName}";
+                        seenNames[currentPath].Add(sfn);
+                    }
+                    else
+                    {
+                        wixFile.Name = fileName;
+                    }
+                    
+                    current.Files = (current.Files ?? new File[0]).Concat(new[] { wixFile }).ToArray();
                 }
             }
 
@@ -296,22 +328,78 @@ namespace AlliePack
             return result;
         }
 
-        private Dir GetOrCreateDir(List<Dir> list, string name)
+        private Dir GetOrCreateDir(List<Dir> list, string name, HashSet<string> seen)
         {
-            var existing = list.FirstOrDefault(d => d.Name == name);
+            var existing = list.FirstOrDefault(d => d.Name == name || d.Name.EndsWith("|" + name));
             if (existing != null) return existing;
+            
             var @new = new Dir(name);
+            if (!name.StartsWith("[") || !name.EndsWith("]"))
+            {
+                string? sfn = GenerateShortName(name, seen);
+                if (sfn != null)
+                {
+                    @new.Name = $"{sfn}|{name}";
+                    seen.Add(sfn);
+                }
+            }
             list.Add(@new);
             return @new;
         }
 
-        private Dir GetOrCreateDir(Dir parent, string name)
+        private Dir GetOrCreateDir(Dir parent, string name, HashSet<string> seen)
         {
-            var existing = parent.Dirs.FirstOrDefault(d => d.Name == name);
+            var existing = (parent.Dirs ?? new Dir[0]).FirstOrDefault(d => d.Name == name || d.Name.EndsWith("|" + name));
             if (existing != null) return existing;
+            
             var @new = new Dir(name);
-            parent.Dirs = parent.Dirs.Concat(new[] { @new }).ToArray();
+            if (!name.StartsWith("[") || !name.EndsWith("]"))
+            {
+                string? sfn = GenerateShortName(name, seen);
+                if (sfn != null)
+                {
+                    @new.Name = $"{sfn}|{name}";
+                    seen.Add(sfn);
+                }
+            }
+            parent.Dirs = (parent.Dirs ?? new Dir[0]).Concat(new[] { @new }).ToArray();
             return @new;
+        }
+
+        private string? GenerateShortName(string longName, HashSet<string> seen)
+        {
+            string name = Path.GetFileNameWithoutExtension(longName);
+            string ext = Path.GetExtension(longName).TrimStart('.');
+
+            // Clean name and ext (only alnum allowed for SFN)
+            name = new string(name.Where(char.IsLetterOrDigit).ToArray());
+            ext = new string(ext.Where(char.IsLetterOrDigit).ToArray());
+            if (ext.Length > 3) ext = ext.Substring(0, 3);
+
+            if (string.IsNullOrEmpty(name)) name = "FILE";
+
+            // If it can be 8.3 natively and isn't seen yet, return it in upper case
+            if (longName.Length <= 12 && longName.Count(c => c == '.') <= 1 && name.Length <= 8 && ext.Length <= 3 && !longName.Contains(" "))
+            {
+                string sfn = longName.ToUpper();
+                if (!seen.Contains(sfn)) return sfn;
+            }
+
+            int suffix = 1;
+            while (true)
+            {
+                string suffixStr = "~" + suffix;
+                int maxBase = 8 - suffixStr.Length;
+                string basePart = name.Length > maxBase ? name.Substring(0, maxBase) : name;
+                string candidate = basePart + suffixStr;
+                if (!string.IsNullOrEmpty(ext)) candidate += "." + ext;
+                
+                candidate = candidate.ToUpper();
+                if (!seen.Contains(candidate)) return candidate;
+                
+                suffix++;
+                if (suffix > 9999) return null; // Let Wix handle if we have too many collisions
+            }
         }
 
         private void GenerateReport(Project project, List<WixEntity> entities)
@@ -334,7 +422,9 @@ namespace AlliePack
             string space = new string(' ', indent * 2);
             if (entity is Dir dir)
             {
-                Console.WriteLine($"{space}[Folder] {dir.Name}");
+                string displayName = dir.Name;
+                if (displayName.Contains("|")) displayName = displayName.Split('|')[1];
+                Console.WriteLine($"{space}[Folder] {displayName}");
                 foreach (var childDir in dir.Dirs)
                 {
                     PrintEntity(childDir, indent + 1);
@@ -346,11 +436,10 @@ namespace AlliePack
             }
             else if (entity is File file)
             {
-                // In WixSharp, File.Name usually contains the source path unless explicitly set.
-                // We'll try to show a clean name if possible.
-                string fileName = file.Name;
-                if (Path.IsPathRooted(fileName)) fileName = Path.GetFileName(fileName);
-                Console.WriteLine($"{space}[File] {fileName}");
+                string displayName = file.Name;
+                if (displayName.Contains("|")) displayName = displayName.Split('|')[1];
+                if (Path.IsPathRooted(displayName)) displayName = Path.GetFileName(displayName);
+                Console.WriteLine($"{space}[File] {displayName}");
             }
         }
     }
