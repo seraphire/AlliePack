@@ -38,22 +38,58 @@ namespace AlliePack
 
             var entities = new List<WixEntity>();
             string installPath = _config.Product.InstallDir ?? (_config.Product.Manufacturer + "\\" + _config.Product.Name);
+            installPath = installPath.Replace('/', '\\');
+            if (installPath.StartsWith("[ProgramFiles]\\", StringComparison.OrdinalIgnoreCase))
+            {
+                installPath = "[ProgramFilesFolder]\\" + installPath.Substring("[ProgramFiles]\\".Length);
+            }
+
             if (!installPath.Contains("[") && !Path.IsPathRooted(installPath))
             {
                 installPath = Path.Combine("[ProgramFilesFolder]", installPath);
             }
             
-            var installDir = new InstallDir(installPath);
-            entities.Add(installDir);
+            Dir? rootDir = null;
+            Dir? targetDir = null;
+
+            string[] pathParts = installPath.Split(new[] { '\\' }, StringSplitOptions.RemoveEmptyEntries);
+            if (pathParts.Length > 0 && pathParts[0].StartsWith("[") && pathParts[0].EndsWith("]"))
+            {
+                rootDir = new Dir(pathParts[0]);
+                targetDir = rootDir;
+                for (int i = 1; i < pathParts.Length; i++)
+                {
+                    var next = new Dir(pathParts[i]);
+                    targetDir.Dirs = new[] { next };
+                    targetDir = next;
+                }
+            }
+            else
+            {
+                // Default WixSharp InstallDir behavior
+                var idir = new InstallDir(installPath);
+                rootDir = idir;
+                targetDir = idir;
+            }
 
             // Convert to WixSharp hierarchy
             var hierarchy = ConvertResolvedFilesToEntities(uniqueFiles);
             foreach (var entity in hierarchy)
             {
-                if (entity is Dir childDir) installDir.Dirs = installDir.Dirs.Concat(new[] { childDir }).ToArray();
-                else if (entity is File childFile) installDir.Files = installDir.Files.Concat(new[] { childFile }).ToArray();
-                else entities.Add(entity);
+                if (entity is Dir childDir) 
+                {
+                    targetDir.Dirs = (targetDir.Dirs ?? new Dir[0]).Concat(new[] { childDir }).ToArray();
+                }
+                else if (entity is File childFile) 
+                {
+                    targetDir.Files = (targetDir.Files ?? new File[0]).Concat(new[] { childFile }).ToArray();
+                }
+                else 
+                {
+                    entities.Add(entity);
+                }
             }
+            entities.Add(rootDir);
 
             var project = new Project(_config.Product.Name, entities.ToArray());
 
