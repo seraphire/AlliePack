@@ -116,6 +116,9 @@ namespace AlliePack
                 project.AttributesDefinition = "Scope=perMachine";
             }
 
+            // Suppress "Ambiguous short name" warning as we are explicitly generating them
+            project.WixOptions = "-sw1044";
+
             if (_options.ReportOnly)
             {
                 GenerateReport(project, entities);
@@ -284,7 +287,6 @@ namespace AlliePack
                         wixFile.AttributesDefinition = $"ShortName={sfn}";
                         seenNames[""].Add(sfn);
                     }
-                    wixFile.Name = fileName;
                     rootFiles.Add(wixFile);
                 }
                 else
@@ -310,7 +312,6 @@ namespace AlliePack
                         wixFile.AttributesDefinition = $"ShortName={sfn}";
                         seenNames[currentPath].Add(sfn);
                     }
-                    wixFile.Name = fileName;
                     
                     current.Files = (current.Files ?? new File[0]).Concat(new[] { wixFile }).ToArray();
                 }
