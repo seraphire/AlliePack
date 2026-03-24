@@ -92,12 +92,43 @@ namespace AlliePack
             entities.Add(rootDir);
 
             // Process Shortcuts
+            var shortcutRootDirs = new Dictionary<string, Dir>(StringComparer.OrdinalIgnoreCase);
+            
             foreach (var s in _config.Shortcuts)
             {
                 string targetPath = ResolvePath(s.Target, installPath);
                 if (fileMap.TryGetValue(targetPath, out var wixFile))
                 {
                     string folder = ResolveFolder(s.Folder);
+                    
+                    // Ensure the target folder exists as a Dir entity in the project
+                    if (folder.StartsWith("%"))
+                    {
+                        string[] parts = folder.Split(new[] { '\\' }, StringSplitOptions.RemoveEmptyEntries);
+                        if (parts.Length > 0)
+                        {
+                            string rootKey = parts[0]; // e.g., %ProgramMenu%
+                            if (!shortcutRootDirs.TryGetValue(rootKey, out var rootDirEntity))
+                            {
+                                rootDirEntity = new Dir(rootKey);
+                                shortcutRootDirs[rootKey] = rootDirEntity;
+                                entities.Add(rootDirEntity);
+                            }
+
+                            Dir current = rootDirEntity;
+                            for (int i = 1; i < parts.Length; i++)
+                            {
+                                var existing = current.Dirs.FirstOrDefault(d => d.Name == parts[i]);
+                                if (existing == null)
+                                {
+                                    existing = new Dir(parts[i]);
+                                    current.Dirs = (current.Dirs ?? new Dir[0]).Concat(new[] { existing }).ToArray();
+                                }
+                                current = existing;
+                            }
+                        }
+                    }
+
                     var shortcut = new FileShortcut(s.Name, folder)
                     {
                         Description = s.Description
@@ -223,7 +254,7 @@ namespace AlliePack
 
             if (!string.IsNullOrEmpty(element.Source))
             {
-                var files = _resolver.ResolveGlob(element.Source);
+                var files = _resolver.ResolveGlob(element.Source ?? "");
                 
                 // Exclusions
                 if (element.ExcludeFiles.Count > 0)
@@ -244,7 +275,7 @@ namespace AlliePack
                 {
                     if (!string.IsNullOrEmpty(element.Source) && !element.Source.Contains("*") && !element.Source.Contains("?"))
                     {
-                        string sourcePath = _resolver.Resolve(element.Source);
+                        string sourcePath = _resolver.Resolve(element.Source ?? "");
                         result.Add(new ResolvedFile { 
                             SourcePath = sourcePath, 
                             RelativeDestinationPath = Path.Combine(newPath, Path.GetFileName(sourcePath)) 
@@ -264,7 +295,7 @@ namespace AlliePack
             }
             else if (!string.IsNullOrEmpty(element.Solution))
             {
-                var solFiles = _solutionResolver.ResolveSolution(element.Solution, element.Configuration, element.Platform, element.ExcludeProjects, element.ExcludeFiles);
+                var solFiles = _solutionResolver.ResolveSolution(element.Solution ?? "", element.Configuration, element.Platform, element.ExcludeProjects, element.ExcludeFiles);
                 foreach (var f in solFiles)
                 {
                     f.RelativeDestinationPath = Path.Combine(newPath, f.RelativeDestinationPath);
@@ -273,7 +304,7 @@ namespace AlliePack
             }
             else if (!string.IsNullOrEmpty(element.Project))
             {
-                var projFiles = _solutionResolver.ResolveProject(element.Project, element.Configuration, element.Platform, element.ExcludeFiles);
+                var projFiles = _solutionResolver.ResolveProject(element.Project ?? "", element.Configuration, element.Platform, element.ExcludeFiles);
                 foreach (var f in projFiles)
                 {
                     f.RelativeDestinationPath = Path.Combine(newPath, f.RelativeDestinationPath);
