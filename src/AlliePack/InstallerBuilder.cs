@@ -445,10 +445,13 @@ namespace AlliePack
             if (string.IsNullOrEmpty(name)) name = "FILE";
 
             // If it can be 8.3 natively and isn't seen yet, return it in upper case
-            if (longName.Length <= 12 && longName.Count(c => c == '.') <= 1 && name.Length <= 8 && ext.Length <= 3 && !longName.Contains(" "))
+            int dotIdx = longName.IndexOf('.');
+            string originalBase = dotIdx >= 0 ? longName.Substring(0, dotIdx) : longName;
+            string originalExt = dotIdx >= 0 ? longName.Substring(dotIdx + 1) : "";
+            if (originalBase.Length <= 8 && originalExt.Length <= 3 && longName.Count(c => c == '.') <= 1 && !longName.Contains(" "))
             {
-                string sfn = longName.ToUpper();
-                if (!seen.Contains(sfn)) return sfn;
+                // Already 8.3-compliant — no need to set ShortName, WiX handles it automatically
+                return null;
             }
 
             int suffix = 1;
