@@ -936,3 +936,116 @@ reachable today via `wix: fragments:`.
 ## Schema Validation
 
 At some point it will be useful to add YAML schema validation so that config errors are caught with clear messages before the build starts. The [AlliePack-docs](https://github.com/seraphire/AlliePack-docs) repo contains a JSON Schema and NJsonSchema-based validator that can be ported once the schema stabilizes.
+
+---
+
+## Horizon: Cross-Platform Packaging
+
+> **Pipe dream -- no implementation timeline.** Captured here because the idea
+> is worth preserving and the existing architecture points toward it further
+> than it might seem.
+
+### The insight
+
+AlliePack's YAML describes *what to install* -- product metadata, files, locations,
+shortcuts, environment variables. It deliberately avoids WiX-specific concepts at
+the schema level; WiX is the current backend, not the contract. That means the same
+config could, in principle, drive a different packaging backend for a different
+platform -- and produce something that belongs on macOS or Linux just as naturally
+as it produces an MSI today.
+
+### What cross-platform packaging looks like
+
+**macOS**
+| Format | Use case |
+|---|---|
+| `.pkg` | System installer; closest equivalent to MSI |
+| `.dmg` | Drag-to-Applications; most common for consumer and developer tools |
+| Homebrew formula | The natural target for developer CLI tools -- `brew install mytool` |
+
+**Linux**
+| Format | Use case |
+|---|---|
+| `.deb` | Debian / Ubuntu |
+| `.rpm` | Red Hat / Fedora / SUSE |
+| AppImage | Universal, no install; runs anywhere |
+| Snap / Flatpak | Sandboxed, self-contained |
+| Homebrew formula | Linuxbrew; same formula as macOS for developer tools |
+
+### Why the existing architecture already helps
+
+**Release flags (Phase 4)** provide the conditional map syntax that would drive
+platform-specific paths and settings without needing a separate config:
+
+```yaml
+releaseFlags:
+  - Windows
+  - macOS
+  - Linux
+
+product:
+  installDir:
+    Windows: "[ProgramFiles]\\MyCompany\\MyApp"
+    macOS:   "/usr/local/bin"
+    Linux:   "/usr/local/bin"
+    _else:   "[ProgramFiles]\\MyCompany\\MyApp"
+```
+
+**Project type resolvers (Phase 6)** would detect the target platform and find
+the right build output. For .NET projects, `dotnet publish -r osx-x64` or
+`-r linux-x64` produces a self-contained binary tree that a macOS or Linux
+resolver would know how to package. For Rust or C++ projects that already have
+cross-compilation set up, the resolver just points at the right output directory.
+
+**Winget manifest generation (Phase 8)** extends naturally to Homebrew formulas
+and Linux package metadata -- the information is the same (name, version, download
+URL, SHA256, description); only the output format differs.
+
+### How a cross-platform build would look
+
+```yaml
+# allie-pack.yaml -- same config, three platform targets
+product:
+  name: "mytool"
+  version: "[VERSION]"
+  manufacturer: "MyCompany"
+
+releaseFlags: [Windows, macOS, Linux]
+defaultActiveFlags: [Windows]
+
+aliases:
+  bin:
+    Windows: "src/MyTool/bin/x64/Release/net8.0/win-x64/publish"
+    macOS:   "src/MyTool/bin/x64/Release/net8.0/osx-x64/publish"
+    Linux:   "src/MyTool/bin/x64/Release/net8.0/linux-x64/publish"
+
+structure:
+  - source: "bin:mytool*"
+```
+
+```
+# Build all three from CI:
+AlliePack.exe allie-pack.yaml --flag Windows -D VERSION=1.2.0 --output dist/mytool-win.msi
+AlliePack.exe allie-pack.yaml --flag macOS   -D VERSION=1.2.0 --output dist/mytool-mac.pkg
+AlliePack.exe allie-pack.yaml --flag Linux   -D VERSION=1.2.0 --output dist/mytool-linux.deb
+```
+
+### What it would actually take
+
+This is not a small undertaking. The WiX/WixSharp backend is deeply integrated
+today. Cross-platform support would require:
+
+1. A **packaging backend abstraction** -- an interface that `InstallerBuilder`
+   currently fills implicitly, made explicit so that `WixBackend`, `PkgBackend`,
+   `DebBackend` etc. can be swapped in based on `--flag` or target platform
+2. **Platform-specific schema fields** -- some things (WiX `fragments:`, Windows
+   services, COM registration) are Windows-only and need to be gracefully ignored
+   or flagged when targeting other platforms
+3. **Platform toolchain dependencies** -- `pkgbuild`/`productbuild` on macOS,
+   `dpkg-deb`/`rpmbuild` on Linux; these need to be present or AlliePack needs
+   to ship cross-platform build containers
+4. **Platform-aware path handling** -- forward vs back slashes, `/Applications`,
+   `$HOME`, `XDG_DATA_HOME` etc.
+
+None of that is impossible. The architecture is pointing the right direction.
+It just needs the phases before it to stabilise first.
