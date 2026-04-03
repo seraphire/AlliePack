@@ -1027,11 +1027,76 @@ AlliePack.exe watch finish --snapshot before.json --output allie-pack.yaml
 **Scope and filtering**
 
 A raw install snapshot is extremely noisy -- Windows itself writes constantly.
-The watch applies filters to focus on installer-relevant changes:
-- Excludes temp files, prefetch, ETW traces, and other system churn
-- User-configurable path scope (`--include "C:\Program Files\MyApp"`)
-- Excludes changes made by processes other than the installer (via process
-  ancestry tracking)
+The watch applies filters in layers:
+
+*Layer 1 -- Process ancestry (always on)*
+Changes are attributed to the process that made them. Only changes from the
+installer process tree are included by default. `SearchIndexer.exe`,
+`MsMpEng.exe` (Defender), `svchost.exe`, and other system workers are excluded
+regardless of what they touch.
+
+*Layer 2 -- Built-in path and registry exclusions (always on)*
+AlliePack ships a `windows-baseline` filter that covers well-known noise
+locations:
+
+| Category | Examples |
+|---|---|
+| Prefetch | `C:\Windows\Prefetch\*.pf` |
+| Temp files | `%TEMP%\**`, `%TMP%\**`, `C:\Windows\Temp\**` |
+| Search index | `C:\ProgramData\Microsoft\Search\**` |
+| Thumbnails / icon cache | `%LOCALAPPDATA%\Microsoft\Windows\Explorer\**` |
+| WER / crash dumps | `%LOCALAPPDATA%\Microsoft\Windows\WER\**` |
+| ETW / diagnostic traces | `C:\Windows\System32\LogFiles\**` |
+| Registry hive logs | `*.LOG1`, `*.LOG2` transaction files |
+| Perf counters | `HKLM\...\Perflib\**` |
+| Recent docs / jump lists | `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\RecentDocs\**` |
+| Font cache | `C:\Windows\ServiceProfiles\LocalService\AppData\Local\FontCache\**` |
+| .NET NGEN / assembly cache | `C:\Windows\assembly\NativeImages_**` |
+
+*Layer 3 -- Named filter profiles (opt-in)*
+Additional profiles cover noise from software that may be running during the
+install. Applied via `--filter <name>`:
+
+| Profile | Covers |
+|---|---|
+| `antivirus` | Defender quarantine updates, scan result caches |
+| `visual-studio` | VS telemetry, extension update markers, `.suo` files |
+| `office` | Office MRU, telemetry, template caches |
+| `browser` | Chrome/Edge/Firefox cache and update activity |
+| `windows-update` | WU staging, CBS logs, SoftwareDistribution churn |
+
+*Layer 4 -- Project rules file (per-project)*
+A `allie-watch-filters.yaml` file in the project directory (or passed via
+`--filters`) lets teams define their own exclusions. The format mirrors
+`.gitignore` in spirit -- glob patterns for paths, key patterns for registry:
+
+```yaml
+# allie-watch-filters.yaml
+exclude:
+  paths:
+    - "C:\\ProgramData\\MyOtherProduct\\**"   # unrelated product updating in background
+    - "%APPDATA%\\MyApp\\logs\\**"            # app writes logs on first run
+
+  registry:
+    - "HKCU\\Software\\MyCompany\\Telemetry\\**"
+
+  processes:
+    - "MyBackgroundSync.exe"                  # known unrelated background process
+```
+
+*Layer 5 -- Community filter packs*
+As AlliePack matures, community-maintained filter packs can be published and
+referenced by name -- similar to `.gitignore` templates on GitHub. Teams that
+regularly install in environments with specific noise profiles (e.g. a corporate
+endpoint with a particular AV product) can publish and share a filter pack rather
+than duplicating rules across projects.
+
+```
+AlliePack.exe watch start --filter windows-baseline --filter antivirus --filter acme-corp
+```
+
+The goal is that by the time a developer looks at the watch output, it contains
+only things the installer actually intended to do.
 
 **What the output looks like**
 
