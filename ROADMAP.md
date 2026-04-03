@@ -937,6 +937,134 @@ reachable today via `wix: fragments:`.
 
 ---
 
+## Migration Tools
+
+Two complementary pathways for getting existing installers into AlliePack.
+Neither requires AlliePack to perfectly reproduce every feature of the source
+installer -- the goal is to produce a clean, correct AlliePack config for
+everything it *can* represent, and leave clearly-marked comments for anything
+that needs manual attention.
+
+---
+
+### Legacy Project Converter
+
+Reads an existing installer project file and generates an `allie-pack.yaml`.
+The converter is a separate subcommand:
+
+```
+AlliePack.exe convert myapp.wse --output allie-pack.yaml
+AlliePack.exe convert myapp.iss --output allie-pack.yaml
+AlliePack.exe convert myapp.nsi --output allie-pack.yaml
+```
+
+**Priority target: InstallMaster `.wse`**
+
+InstallMaster (Indigo Rose Software) stores projects in `.wse` files. The format
+is parseable XML and covers files, registry, shortcuts, environment variables,
+and custom actions. A converter would extract all of these and map them to their
+AlliePack equivalents. Anything that doesn't yet have an AlliePack equivalent
+is emitted as a commented-out `wix: fragments:` block or a `# TODO:` note so
+nothing is silently lost.
+
+**Other formats worth supporting over time**
+
+| Format | Tool |
+|---|---|
+| `.wse` | InstallMaster 8.x (Indigo Rose) -- highest priority |
+| `.iss` | Inno Setup |
+| `.nsi` | NSIS (Nullsoft Scriptable Install System) |
+| `.ism` | InstallShield |
+| `.wxs` | WiX XML -- convert hand-authored WiX back to AlliePack YAML |
+| `.aip` | Advanced Installer |
+
+**What conversion produces**
+
+For each source project the converter generates:
+- A best-effort `allie-pack.yaml` with all directly mappable content
+- `# TODO: [reason]` comments for anything requiring manual review
+- A conversion report listing what was mapped, what was approximated, and
+  what was not supported (with the raw source value preserved)
+- A `wix: fragments:` section containing raw WiX XML for anything the converter
+  could translate to WiX but not yet to AlliePack YAML
+
+The output is intended to be a working starting point, not a perfect one-shot
+migration. A developer should be able to run it, read the TODOs, fill in the
+gaps, and have a working AlliePack config in an hour rather than a day.
+
+---
+
+### Installer Watch (Snapshot Diff)
+
+Takes a before-and-after snapshot of the system around an install and generates
+an AlliePack config from the observed changes. Useful when you have a compiled
+installer but no source project, or when you want to understand what a black-box
+installer actually does.
+
+```
+# Step 1: snapshot the system before installing
+AlliePack.exe watch start --snapshot before.json
+
+# Step 2: run your existing installer (manually or via script)
+myapp-setup.exe /silent
+
+# Step 3: snapshot the system after, diff, and emit AlliePack config
+AlliePack.exe watch finish --snapshot before.json --output allie-pack.yaml
+```
+
+**What the watch captures**
+
+| Category | Details |
+|---|---|
+| Files | New and modified files under Program Files, AppData, and user-specified paths |
+| Registry | New keys and values under HKLM and HKCU (scoped -- not a full hive dump) |
+| Environment variables | User and machine variables added or modified |
+| Services | New services and their configuration |
+| Scheduled tasks | New tasks in Task Scheduler |
+| Shortcuts | New `.lnk` files in Start Menu and Desktop |
+| Event log sources | New sources registered in the Windows Event Log |
+
+**Scope and filtering**
+
+A raw install snapshot is extremely noisy -- Windows itself writes constantly.
+The watch applies filters to focus on installer-relevant changes:
+- Excludes temp files, prefetch, ETW traces, and other system churn
+- User-configurable path scope (`--include "C:\Program Files\MyApp"`)
+- Excludes changes made by processes other than the installer (via process
+  ancestry tracking)
+
+**What the output looks like**
+
+The generated `allie-pack.yaml` is annotated with the source of each entry:
+
+```yaml
+# Observed: C:\Program Files\MyApp\myapp.exe
+structure:
+  - folder: "App"
+    contents:
+      - source: "[ProgramFiles]\\MyApp\\myapp.exe"   # TODO: replace with alias
+
+# Observed: HKCU\Software\MyCompany\MyApp\InstallPath = C:\Program Files\MyApp
+registry:                                             # TODO: registry (Phase 1)
+  - root: HKCU
+    key: "Software\\MyCompany\\MyApp"
+    name: "InstallPath"
+    value: "[INSTALLDIR]"
+    type: string
+```
+
+**Relationship to the project converter**
+
+The two tools are complementary:
+- **Converter** -- you have the source project; use it for a clean, structured migration
+- **Watch** -- you have only the compiled installer; use it to reverse-engineer what it does
+
+A common workflow is to run Watch first to understand the installer's full scope,
+then use the Converter on the source project if you can locate it, and reconcile
+the two outputs to catch anything the Converter missed.
+
+---
+
 ## Schema Validation
 
 At some point it will be useful to add YAML schema validation so that config errors are caught with clear messages before the build starts. The [AlliePack-docs](https://github.com/seraphire/AlliePack-docs) repo contains a JSON Schema and NJsonSchema-based validator that can be ported once the schema stabilizes.
