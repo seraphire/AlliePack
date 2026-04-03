@@ -902,13 +902,14 @@ reachable today via `wix: fragments:`.
 | **COM / DCOM registration** | `regsvr32`-style self-registration, type library (`.tlb`) registration, class/interface/progid entries in HKCR |
 | **COM+ application** | Register components in the COM+ catalog; set application identity, activation, pooling |
 | **Windows Service** | Install, configure, start, stop, and remove a Windows service; set account, startup type, dependencies |
+| **Service accounts** | Create a dedicated local user account for running a service under a least-privilege identity; or look up an existing account by name or SID to assign without creating one |
+| **Windows Event Log** | Find or create an event log and register a custom event source; needed by services that write structured entries to Event Viewer |
 | **IIS site / virtual directory** | Create or modify IIS sites, app pools, virtual directories, and application settings |
 | **ODBC data source** | Register a system or user DSN; set driver, server, and connection parameters |
 | **Performance counters** | Register custom performance counter categories and instances |
 | **Scheduled tasks** | Create Windows Task Scheduler entries with trigger, action, and account settings |
 | **Windows Firewall rules** | Open inbound/outbound ports or application exceptions |
 | **Font installation** | Install `.ttf` / `.otf` fonts to the Windows Fonts folder |
-| **Event log sources** | Register a custom event source in the Windows Event Log |
 | **GAC assembly registration** | Install a signed .NET assembly into the Global Assembly Cache |
 
 ### Installer experience
@@ -921,9 +922,12 @@ reachable today via `wix: fragments:`.
 
 ### Notes
 
-- **Windows Service** is the most commonly needed item and the most likely to get
-  a dedicated YAML block in the near term. WixSharp has direct support and the
-  mapping to YAML is straightforward.
+- **Windows Service + Service Accounts + Event Log** form a natural cluster --
+  in practice you rarely install a service without also needing a dedicated account
+  to run it under and an event source to write to. These three will likely land
+  together as a `services:` block. WixSharp has direct support for the service
+  installer; account creation and event log setup are custom action territory
+  (Phase 11) or `wix: fragments:` in the interim.
 - **IIS** support is closely tied to the ASP.NET project type resolver (Phase 6)
   and will likely arrive alongside it.
 - **COM / COM+** support will likely arrive as part of Phase 6's COM+ resolver,
