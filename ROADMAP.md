@@ -428,11 +428,106 @@ one config drives both the MSI build and the winget submission package.
 
 ---
 
+## Phase 8 -- Bundles (Bootstrap EXE + Prerequisites)
+
+> **Complexity warning.** WiX Burn bundles are the most powerful — and most
+> complicated — thing in the WiX ecosystem. This phase is deliberately last
+> because it introduces a new output type (a signed `.exe` bootstrapper rather
+> than an `.msi`), new concepts (chaining, elevation strategy, detection
+> conditions), and new infrastructure (code signing). Everything in Phases 1-7
+> works without touching any of this.
+
+### What a bundle is
+
+A Burn bootstrapper is a self-extracting `.exe` that chains one or more
+packages together in sequence: install .NET if missing, install VC++ redist,
+install the main MSI, etc. It handles UAC elevation once at launch rather than
+mid-install, shows a unified progress UI, and rolls back all packages on failure.
+
+### Three tiers of bundle support
+
+AlliePack will approach bundles in increasing order of magic:
+
+**Tier 1 -- Multi-build config**
+A single `.allie.yaml` declares multiple MSI outputs. No bootstrapper, no
+chaining -- just a convenience for configs that currently require two
+`--flag` invocations. The output is still separate MSIs.
+
+```yaml
+builds:
+  - name: perUser
+    flags: [PerUser]
+    output: "dist/MyApp-user.msi"
+  - name: perMachine
+    flags: [PerMachine]
+    output: "dist/MyApp-machine.msi"
+```
+
+**Tier 2 -- Chained AlliePack configs**
+A `bundle:` top-level block wraps multiple AlliePack configs (or a mix of
+configs and external packages) into a Burn bootstrapper. AlliePack builds
+each referenced config as an MSI, then chains them.
+
+```yaml
+bundle:
+  output: "dist/MyApp-setup.exe"
+  chain:
+    - config: "prereqs/runtime.allie.yaml"   # built by AlliePack
+    - config: "allie-pack.yaml"              # the main product
+```
+
+**Tier 3 -- Named prerequisites (magic)**
+AlliePack knows about well-known prerequisites by name -- their download URLs,
+detection conditions, and silent install flags. Declare a prereq by name and
+AlliePack handles the rest.
+
+```yaml
+bundle:
+  output: "dist/MyApp-setup.exe"
+  prerequisites:
+    - package: "dotnet481"       # .NET Framework 4.8.1
+    - package: "vcredist2022-x64"
+  chain:
+    - config: "allie-pack.yaml"
+```
+
+Named prerequisites that AlliePack will understand out of the box:
+`dotnet481`, `dotnet6`, `dotnet8`, `vcredist2022-x64`, `vcredist2022-x86`.
+
+### Elevation and UAC
+
+The bootstrapper requests elevation once at launch if any chained package
+requires it (i.e., any per-machine MSI in the chain). Per-user-only chains
+run without elevation. AlliePack infers the required elevation level from the
+chain and sets the bootstrapper manifest accordingly -- no explicit config
+needed.
+
+### Code signing
+
+Burn bootstrapper EXEs must be signed to avoid SmartScreen warnings. MSIs
+benefit from signing too. This introduces a `signing:` block that applies to
+all outputs from the config:
+
+```yaml
+signing:
+  thumbprint: "ABCDEF1234..."        # certificate thumbprint in local cert store
+  # or
+  pfx: "certs/MyApp.pfx"
+  pfxPassword: "[SIGN_PASSWORD]"     # injected via --define at build time
+  timestampUrl: "http://timestamp.digicert.com"
+```
+
+`signing:` is a top-level block (not under `product:`) so it remains invisible
+to configs that don't need it. When present it applies to all MSI outputs and,
+if a bundle is declared, to the bootstrapper EXE as well.
+
+---
+
 ## Deferred / Out of Scope
 
 The following are explicitly not planned for the near term:
 
-- **Bootstrap EXE** -- bundled installer that installs prerequisites; significant complexity
+- **Bootstrap EXE** -- promoted to Phase 8 above
 - **COM+ / DCOM registration** -- niche requirement
 - **ODBC / database DSN setup** -- niche requirement
 - **Font installation** -- low demand
