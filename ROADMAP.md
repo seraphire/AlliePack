@@ -945,6 +945,36 @@ installer -- the goal is to produce a clean, correct AlliePack config for
 everything it *can* represent, and leave clearly-marked comments for anything
 that needs manual attention.
 
+**Project structure note**
+
+These two tools may be better as sibling projects rather than subcommands of
+AlliePack itself:
+
+- **Legacy Project Converter** is tightly coupled to the AlliePack schema --
+  its entire job is producing `allie-pack.yaml`. It fits naturally as an
+  `AlliePack convert` subcommand or a thin companion tool (`AlliePack.Convert`)
+  that shares the schema models.
+
+- **Installer Watch** has a life well beyond AlliePack. It is useful for
+  security auditing, compliance review, and understanding any installer
+  regardless of what you intend to do with the output. If its primary output
+  is a generic, tool-agnostic diff format (JSON) and AlliePack YAML is one
+  of several export targets, the tool becomes broadly useful to anyone working
+  with Windows installers -- not just AlliePack users. The crowdsourced filter
+  pack community would grow faster and be more engaged if the tool stands on
+  its own.
+
+  A separate project (`AlliePack.Watch` or a standalone name entirely) would:
+  - Have its own release cadence -- filter packs need frequent updates as
+    Windows evolves; AlliePack core is more stable
+  - Accept contributions from people who have never used AlliePack
+  - Support export to other formats (WiX XML, Inno Setup, documentation) in
+    addition to `allie-pack.yaml`
+  - Allow the filter pack ecosystem to develop independently
+
+  The shared contract between the two projects would be the diff format and
+  the `allie-pack.yaml` schema -- both versioned and stable.
+
 ---
 
 ### Legacy Project Converter
