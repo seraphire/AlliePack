@@ -2,6 +2,26 @@
 
 This document tracks planned features and their implementation priority. Items are grouped into phases based on dependency order and complexity. The [AlliePack-docs](https://github.com/seraphire/AlliePack-docs) repository contains detailed design specifications and YAML schema examples for many of these features.
 
+## Design Principle: Progressive Complexity
+
+AlliePack's core promise is that a simple installer stays simple. A minimal working
+config is a dozen lines of YAML. Every feature added beyond that should be invisible
+to users who don't need it -- no required fields, no forced migration, no new concepts
+that appear in someone else's config and demand explanation.
+
+**Rules for new features:**
+- Zero-config defaults: the feature must work sensibly without the user knowing it exists
+- New sections over nested keys: a new top-level block (like `winget:`, `features:`) is
+  less intimidating than adding more keys to `product:` -- if you don't need it, skip it
+- No new required fields -- everything has a sane default or is omitted entirely
+- An advanced developer should be able to find and use every capability; an average
+  developer should never be forced to read past what they need
+
+The YAML structure itself communicates complexity level. `product:` is always needed.
+`aliases:`, `structure:` are almost always needed. `directories:`, `groups:`,
+`environment:`, `releaseFlags:` appear only in configs that need them. Future sections
+follow the same pattern.
+
 ## Phase 1 -- System Integration
 
 Direct WixSharp support exists for all of these; they are self-contained additions with no new schema complexity.
