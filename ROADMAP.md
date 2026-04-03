@@ -844,6 +844,50 @@ future WiX versions. Before reaching for a custom action, consider whether:
 
 ---
 
+## WiX XML Fragments (Always Available)
+
+> **Implemented.** This is not a future phase — it is available now.
+
+When no AlliePack feature covers a requirement, raw WiX XML can be injected
+directly into the generated `.wxs` document via a top-level `wix:` block.
+This is the final escape hatch: anything WiX supports, AlliePack can express.
+
+```yaml
+wix:
+  fragments:
+    # Inline XML -- added as a direct child of the <Wix> root element
+    - inline: |
+        <Fragment>
+          <ComponentGroup Id="SpecialComponents">
+            <Component Id="SpecialReg" Directory="INSTALLDIR">
+              <RegistryKey Root="HKCU" Key="Software\MyCompany\MyApp">
+                <RegistryValue Name="SpecialFlag" Value="1" Type="integer"
+                               KeyPath="yes"/>
+              </RegistryKey>
+            </Component>
+          </ComponentGroup>
+        </Fragment>
+
+    # External .wxs file -- path resolved via aliases and tokens
+    - file: "installer/custom-com-registration.wxs"
+```
+
+Fragments are injected after AlliePack builds the complete WiX document but
+before it is handed to the WiX compiler. `--verbose` reports each fragment as
+it is injected. `--report` lists the fragments without building.
+
+**When to reach for this:**
+- A WiX feature that has no AlliePack equivalent yet
+- Complex COM or DCOM registration that the Phase 6 COM+ resolver doesn't cover
+- Unusual component conditions or install sequencing requirements
+- Referencing an existing hand-authored `.wxs` fragment from a previous project
+
+**The traceability guarantee holds here too:** because you are writing WiX XML
+directly, the generated output is your input — there is nothing hidden between
+what you wrote and what the compiler sees.
+
+---
+
 ## Deferred / Out of Scope
 
 The following are explicitly not planned for the near term:

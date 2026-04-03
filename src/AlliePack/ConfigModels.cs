@@ -107,6 +107,10 @@ namespace AlliePack
         [YamlMember(Alias = "groups")]
         public List<FileGroupConfig> Groups { get; set; } = new();
 
+        // Raw WiX XML escape hatch
+        [YamlMember(Alias = "wix")]
+        public WixConfig? Wix { get; set; }
+
         // GAP-5: release flags declared in the config file
         [YamlMember(Alias = "releaseFlags")]
         public List<string> ReleaseFlags { get; set; } = new();
@@ -213,6 +217,27 @@ namespace AlliePack
         public string Description { get; set; } = string.Empty;
         public string? Icon { get; set; }
         public string Folder { get; set; } = string.Empty;
+    }
+
+    // -----------------------------------------------------------------------
+    // Raw WiX XML escape hatch
+    // -----------------------------------------------------------------------
+
+    public class WixConfig
+    {
+        [YamlMember(Alias = "fragments")]
+        public List<WixFragmentConfig> Fragments { get; set; } = new();
+    }
+
+    public class WixFragmentConfig
+    {
+        // Inline XML string -- Fragment element or any valid WiX top-level element
+        [YamlMember(Alias = "inline")]
+        public string? Inline { get; set; }
+
+        // Path to a .wxs file; resolved via aliases and tokens
+        [YamlMember(Alias = "file")]
+        public string? File { get; set; }
     }
 
     // -----------------------------------------------------------------------

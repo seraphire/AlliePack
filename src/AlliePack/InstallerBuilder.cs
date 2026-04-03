@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Xml.Linq;
 using WixSharp;
 using WixSharp.UI.WPF;
 using YamlDotNet.Serialization;
@@ -289,6 +290,39 @@ namespace AlliePack
                 .Add<ProgressDialog>()
                 .Add<ExitDialog>();
             project.ManagedUI = ui;
+
+            // Raw WiX XML fragments -- escape hatch for anything AlliePack doesn't cover
+            if (_config.Wix?.Fragments.Any() == true)
+            {
+                var fragments = _config.Wix.Fragments;
+                project.WixSourceGenerated += document =>
+                {
+                    foreach (var fragment in fragments)
+                    {
+                        try
+                        {
+                            XElement xml;
+                            if (!string.IsNullOrWhiteSpace(fragment.Inline))
+                            {
+                                xml = XElement.Parse(fragment.Inline);
+                            }
+                            else if (!string.IsNullOrWhiteSpace(fragment.File))
+                            {
+                                xml = XElement.Load(_resolver.Resolve(fragment.File));
+                            }
+                            else continue;
+
+                            document.Root!.Add(xml);
+                            if (_options.Verbose)
+                                Console.WriteLine($"  wix fragment injected: {xml.Name.LocalName}");
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"Warning: failed to inject WiX fragment: {ex.Message}");
+                        }
+                    }
+                };
+            }
 
             if (_options.ReportOnly)
             {
@@ -665,6 +699,18 @@ namespace AlliePack
                 Console.WriteLine("Environment Variables:");
                 foreach (var ev in _config.Environment)
                     Console.WriteLine($"  [{ev.Scope.Resolve(_activeFlags)}] {ev.Name} = {ev.Value.Resolve(_activeFlags)}");
+            }
+
+            if (_config.Wix?.Fragments.Any() == true)
+            {
+                Console.WriteLine("WiX XML Fragments (escape hatch):");
+                foreach (var f in _config.Wix.Fragments)
+                {
+                    if (!string.IsNullOrWhiteSpace(f.File))
+                        Console.WriteLine($"  [file]   {f.File}");
+                    else if (!string.IsNullOrWhiteSpace(f.Inline))
+                        Console.WriteLine($"  [inline] {f.Inline.Trim().Split('\n')[0].Trim()}...");
+                }
             }
 
             if (_config.Groups.Any())
