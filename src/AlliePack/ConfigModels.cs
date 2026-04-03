@@ -17,6 +17,9 @@ namespace AlliePack
 
         [YamlMember(Alias = "shortcuts")]
         public List<ShortcutInfo> Shortcuts { get; set; } = new();
+
+        [YamlMember(Alias = "environment")]
+        public List<EnvVarConfig> Environment { get; set; } = new();
     }
 
     public class ShortcutInfo
@@ -44,6 +47,18 @@ namespace AlliePack
 
         [YamlMember(Alias = "licenseFile")]
         public string? LicenseFile { get; set; }
+    }
+
+    public class EnvVarConfig
+    {
+        [YamlMember(Alias = "name")]
+        public string Name { get; set; } = string.Empty;
+
+        [YamlMember(Alias = "value")]
+        public string Value { get; set; } = string.Empty;
+
+        [YamlMember(Alias = "scope")]
+        public string Scope { get; set; } = "user"; // user or machine
     }
 
     public class StructureElement

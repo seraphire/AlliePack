@@ -163,6 +163,21 @@ shortcuts:
 | `[ProgramMenuFolder]` | Start Menu\Programs |
 | `[Desktop]` or `[DesktopFolder]` | Desktop |
 
+### `environment`
+
+Set user or machine environment variables during installation. Variables are removed on uninstall.
+
+```yaml
+environment:
+  - name: "MYAPP_HOME"
+    value: "[INSTALLDIR]"
+    scope: user       # user (default) or machine
+
+  - name: "MYAPP_MODE"
+    value: "production"
+    scope: machine
+```
+
 ## Project Structure
 
 ```
@@ -187,7 +202,7 @@ src/AlliePack/
 - [x] `--define` token substitution
 - [x] x64 / arm64 platform support
 - [ ] Registry keys and values
-- [ ] Environment variables
+- [x] Environment variables
 - [ ] Optional installer features (component selection)
 - [ ] Release flags and conditional inclusion (multi-client configs)
 - [ ] Modular YAML includes

@@ -107,6 +107,21 @@ namespace AlliePack
                     entities.Add(entity);
                 }
             }
+            // Environment variables -- attached to INSTALLDIR so they
+            // are installed/removed with the product.
+            foreach (var ev in _config.Environment)
+            {
+                bool isSystem = ev.Scope.Equals("machine", StringComparison.OrdinalIgnoreCase);
+                var envVar = new EnvironmentVariable(ev.Name, ev.Value)
+                {
+                    System = isSystem,
+                    Permanent = false,
+                };
+                targetDir.GenericItems = (targetDir.GenericItems ?? new IGenericEntity[0])
+                    .Concat(new IGenericEntity[] { envVar })
+                    .ToArray();
+            }
+
             entities.Add(rootDir);
 
             // Process Shortcuts
@@ -574,10 +589,17 @@ namespace AlliePack
             Console.WriteLine($"Version: {project.Version}");
             Console.WriteLine($"UpgradeCode: {project.GUID}");
             Console.WriteLine("------------------------------------");
-            
+
             foreach (var entity in entities)
             {
                 PrintEntity(entity, 0);
+            }
+
+            if (_config.Environment.Any())
+            {
+                Console.WriteLine("Environment Variables:");
+                foreach (var ev in _config.Environment)
+                    Console.WriteLine($"  [{ev.Scope}] {ev.Name} = {ev.Value}");
             }
         }
 
