@@ -1001,43 +1001,79 @@ an AlliePack config from the observed changes. Useful when you have a compiled
 installer but no source project, or when you want to understand what a black-box
 installer actually does.
 
+**Two capture modes**
+
+The watch tool must support two fundamentally different modes because different
+installer technologies write files under different process identities:
+
+*Mode 1 -- Process-scoped (EXE installers)*
+For self-contained EXE installers (NSIS, Inno Setup, InstallMaster, etc.) the
+installer process itself makes all the file and registry writes. Process ancestry
+tracking is effective: only changes from the installer's process tree are recorded,
+and background system noise is attributed to unrelated processes and dropped.
+
 ```
-# Step 1: snapshot the system before installing
-AlliePack.exe watch start --snapshot before.json
-
-# Step 2: run your existing installer (manually or via script)
-myapp-setup.exe /silent
-
-# Step 3: snapshot the system after, diff, and emit AlliePack config
+AlliePack.exe watch start --mode process
+myapp-setup.exe
 AlliePack.exe watch finish --snapshot before.json --output allie-pack.yaml
+```
+
+*Mode 2 -- Full snapshot diff (MSI and anything else)*
+MSI installers hand off to the Windows Installer service (`msiexec.exe` running
+as SYSTEM). The actual file writes happen under a system service process completely
+outside the launching process tree -- process ancestry tracking sees nothing.
+Full snapshot diff takes a complete before/after picture of the filesystem and
+registry regardless of which process made the change, then relies entirely on
+filtering to remove noise.
+
+```
+AlliePack.exe watch start --mode snapshot
+msiexec /i myapp.msi /quiet
+AlliePack.exe watch finish --snapshot before.json --output allie-pack.yaml
+```
+
+This is also the right mode for any installer whose internals you don't control,
+or when you simply want a complete record of everything that changed.
+
+**The raw diff is always saved**
+
+Filters are applied as a post-processing step against a saved raw diff, not as
+a gate at capture time. This means:
+- The install only needs to run once
+- Different filter combinations can be applied and re-applied to the same diff
+- The raw diff can be shared with others who may apply their own filters
+- If a filter turns out to be too aggressive, re-run the filter step without
+  repeating the install
+
+```
+# Re-apply filters to an existing raw diff without re-running the install
+AlliePack.exe watch filter diff.json --filter windows-baseline --filter acme-corp --output allie-pack.yaml
 ```
 
 **What the watch captures**
 
 | Category | Details |
 |---|---|
-| Files | New and modified files under Program Files, AppData, and user-specified paths |
-| Registry | New keys and values under HKLM and HKCU (scoped -- not a full hive dump) |
+| Files | New and modified files; configurable path scope |
+| Registry | New keys and values under HKLM and HKCU |
 | Environment variables | User and machine variables added or modified |
 | Services | New services and their configuration |
 | Scheduled tasks | New tasks in Task Scheduler |
 | Shortcuts | New `.lnk` files in Start Menu and Desktop |
 | Event log sources | New sources registered in the Windows Event Log |
 
-**Scope and filtering**
+**Filtering layers**
 
-A raw install snapshot is extremely noisy -- Windows itself writes constantly.
-The watch applies filters in layers:
+Filters are applied to the raw diff to produce the cleaned output. Layers are
+applied in order; each narrows the result further.
 
-*Layer 1 -- Process ancestry (always on)*
-Changes are attributed to the process that made them. Only changes from the
-installer process tree are included by default. `SearchIndexer.exe`,
-`MsMpEng.exe` (Defender), `svchost.exe`, and other system workers are excluded
-regardless of what they touch.
+*Layer 1 -- Process filter (process-scoped mode only)*
+In process-scoped mode, changes are attributed to the writing process. Changes
+from `SearchIndexer.exe`, `MsMpEng.exe`, `svchost.exe`, and other known system
+workers are dropped. In full snapshot mode this layer is skipped entirely.
 
 *Layer 2 -- Built-in path and registry exclusions (always on)*
-AlliePack ships a `windows-baseline` filter that covers well-known noise
-locations:
+AlliePack ships a `windows-baseline` filter covering well-known noise locations:
 
 | Category | Examples |
 |---|---|
@@ -1049,13 +1085,12 @@ locations:
 | ETW / diagnostic traces | `C:\Windows\System32\LogFiles\**` |
 | Registry hive logs | `*.LOG1`, `*.LOG2` transaction files |
 | Perf counters | `HKLM\...\Perflib\**` |
-| Recent docs / jump lists | `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\RecentDocs\**` |
+| Recent docs / jump lists | `HKCU\...\Explorer\RecentDocs\**` |
 | Font cache | `C:\Windows\ServiceProfiles\LocalService\AppData\Local\FontCache\**` |
 | .NET NGEN / assembly cache | `C:\Windows\assembly\NativeImages_**` |
 
 *Layer 3 -- Named filter profiles (opt-in)*
-Additional profiles cover noise from software that may be running during the
-install. Applied via `--filter <name>`:
+Additional profiles for common sources of noise. Applied via `--filter <name>`:
 
 | Profile | Covers |
 |---|---|
@@ -1065,34 +1100,33 @@ install. Applied via `--filter <name>`:
 | `browser` | Chrome/Edge/Firefox cache and update activity |
 | `windows-update` | WU staging, CBS logs, SoftwareDistribution churn |
 
-*Layer 4 -- Project rules file (per-project)*
-A `allie-watch-filters.yaml` file in the project directory (or passed via
-`--filters`) lets teams define their own exclusions. The format mirrors
-`.gitignore` in spirit -- glob patterns for paths, key patterns for registry:
+*Layer 4 -- Project rules file*
+An `allie-watch-filters.yaml` in the project directory (or `--filters <path>`)
+for environment-specific exclusions. Glob patterns for paths, key patterns for
+registry:
 
 ```yaml
 # allie-watch-filters.yaml
 exclude:
   paths:
-    - "C:\\ProgramData\\MyOtherProduct\\**"   # unrelated product updating in background
-    - "%APPDATA%\\MyApp\\logs\\**"            # app writes logs on first run
-
+    - "C:\\ProgramData\\MyOtherProduct\\**"
+    - "%APPDATA%\\MyApp\\logs\\**"
   registry:
     - "HKCU\\Software\\MyCompany\\Telemetry\\**"
-
   processes:
-    - "MyBackgroundSync.exe"                  # known unrelated background process
+    - "MyBackgroundSync.exe"    # process-scoped mode only
 ```
 
-*Layer 5 -- Community filter packs*
-As AlliePack matures, community-maintained filter packs can be published and
-referenced by name -- similar to `.gitignore` templates on GitHub. Teams that
-regularly install in environments with specific noise profiles (e.g. a corporate
-endpoint with a particular AV product) can publish and share a filter pack rather
-than duplicating rules across projects.
+*Layer 5 -- Crowdsourced community filter packs*
+Community-maintained packs for specific environments -- a corporate AV product,
+a monitoring agent, a particular enterprise endpoint configuration. Published and
+referenced by name. Teams contribute rules from real captures so others don't
+have to rediscover the same noise patterns. Because filters operate on the saved
+raw diff, a new community pack can be applied to an old capture without re-running
+the install:
 
 ```
-AlliePack.exe watch start --filter windows-baseline --filter antivirus --filter acme-corp
+AlliePack.exe watch filter diff.json --filter windows-baseline --filter acme-corp-endpoint
 ```
 
 The goal is that by the time a developer looks at the watch output, it contains
