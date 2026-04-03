@@ -446,11 +446,30 @@ mid-install, shows a unified progress UI, and rolls back all packages on failure
 
 ### Three tiers of bundle support
 
-AlliePack will approach bundles in increasing order of magic:
+### The trigger: `prerequisites:` is the bundle declaration
+
+Adding a top-level `prerequisites:` block is all it takes. AlliePack sees it
+and automatically produces a Burn bootstrapper `.exe` instead of a plain `.msi`.
+No separate `bundle:` keyword, no WiX terminology to learn -- the presence of
+prerequisites *is* the signal that a bundle is needed.
+
+```yaml
+# Without prerequisites: -- builds MyApp.msi
+product:
+  name: "MyApp"
+  ...
+
+# With prerequisites: -- builds MyApp-setup.exe (Burn bootstrapper)
+prerequisites:
+  - package: "dotnet481"
+  - package: "vcredist2022-x64"
+```
+
+AlliePack will approach bundle support in increasing order of magic:
 
 **Tier 1 -- Multi-build config**
 A single `.allie.yaml` declares multiple MSI outputs. No bootstrapper, no
-chaining -- just a convenience for configs that currently require two
+prerequisites -- just a convenience for configs that currently require two
 `--flag` invocations. The output is still separate MSIs.
 
 ```yaml
@@ -463,36 +482,33 @@ builds:
     output: "dist/MyApp-machine.msi"
 ```
 
-**Tier 2 -- Chained AlliePack configs**
-A `bundle:` top-level block wraps multiple AlliePack configs (or a mix of
-configs and external packages) into a Burn bootstrapper. AlliePack builds
-each referenced config as an MSI, then chains them.
-
-```yaml
-bundle:
-  output: "dist/MyApp-setup.exe"
-  chain:
-    - config: "prereqs/runtime.allie.yaml"   # built by AlliePack
-    - config: "allie-pack.yaml"              # the main product
-```
-
-**Tier 3 -- Named prerequisites (magic)**
+**Tier 2 -- Named prerequisites (magic)**
 AlliePack knows about well-known prerequisites by name -- their download URLs,
 detection conditions, and silent install flags. Declare a prereq by name and
-AlliePack handles the rest.
+AlliePack handles the rest. The bootstrapper is generated automatically.
 
 ```yaml
-bundle:
-  output: "dist/MyApp-setup.exe"
-  prerequisites:
-    - package: "dotnet481"       # .NET Framework 4.8.1
-    - package: "vcredist2022-x64"
-  chain:
-    - config: "allie-pack.yaml"
+prerequisites:
+  - package: "dotnet481"           # .NET Framework 4.8.1
+  - package: "vcredist2022-x64"    # Visual C++ 2022 x64 redistributable
 ```
 
-Named prerequisites that AlliePack will understand out of the box:
+Named prerequisites AlliePack will understand out of the box:
 `dotnet481`, `dotnet6`, `dotnet8`, `vcredist2022-x64`, `vcredist2022-x86`.
+
+**Tier 3 -- External or custom prerequisite packages**
+Reference an external installer by URL or local path when a named package
+isn't available, or chain another AlliePack config as a prerequisite.
+
+```yaml
+prerequisites:
+  - package: "dotnet481"
+  - url: "https://example.com/MyRuntime-setup.exe"
+    sha256: "abc123..."
+    silentArgs: "/quiet /norestart"
+    detectCondition: "HKLM:\\Software\\MyRuntime\\Installed"
+  - config: "prereqs/shared-components.allie.yaml"   # built by AlliePack first
+```
 
 ### Elevation and UAC
 
