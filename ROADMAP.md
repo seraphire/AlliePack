@@ -523,6 +523,141 @@ if a bundle is declared, to the bootstrapper EXE as well.
 
 ---
 
+## Phase 9 -- Action Sequencing
+
+MSI installations run in defined **sequences** — ordered lists of actions that
+the installer engine executes at specific stages. AlliePack currently places
+everything in the default positions WixSharp chooses. This phase exposes
+sequence control to the config author when the defaults aren't enough.
+
+### The four sequences
+
+| Sequence | When it runs | Context |
+|---|---|---|
+| `installUI` | Before install, in installer process | User, interactive |
+| `installExecute` | During install, in installer service | System / elevated |
+| `adminUI` | Before admin (`/a`) extract | User, interactive |
+| `adminExecute` | During admin extract | System / elevated |
+
+Most configs never need to touch these. The need arises when you have to do
+something at a specific point relative to a standard action -- for example, stop
+a service _before_ `InstallFiles`, or register a COM object _after_
+`InstallFiles` but _before_ `InstallFinalize`.
+
+### Execution contexts within a sequence
+
+Actions within `installExecute` have additional context options:
+
+| Context | Meaning |
+|---|---|
+| `immediate` | Runs in the UI process, user context; cannot make system changes |
+| `deferred` | Runs inside the installer service transaction; elevated, can write files/registry |
+| `rollback` | Runs if the installation fails, to undo deferred work |
+| `commit` | Runs after the transaction is committed; no rollback possible |
+
+Deferred actions cannot read MSI session properties directly. Data must be
+passed through a `CustomActionData` property set by a preceding immediate action.
+AlliePack will handle this wiring automatically when `execute: deferred` is set.
+
+### Proposed syntax
+
+```yaml
+# Controlling when a built-in AlliePack action runs
+environment:
+  - name: "MYAPP_HOME"
+    value: "[INSTALLDIR]"
+    scope: user
+    sequence: installExecute     # default; shown for illustration
+    after: InstallFiles          # default positioning
+```
+
+Action ordering for most built-ins (env vars, registry, shortcuts) is handled
+automatically. Explicit `sequence:` and `before:`/`after:` fields are an escape
+hatch for unusual requirements.
+
+---
+
+## Phase 10 -- Custom Actions
+
+> **This is the most advanced feature in the roadmap and the one most at odds with
+> AlliePack's simplicity principle.** Custom actions require shipping compiled code
+> (a .NET DLL, a script, or an EXE) alongside the installer. They are powerful and
+> sometimes unavoidable, but they introduce complexity that no YAML abstraction fully
+> hides. Approach with care.
+
+### What custom actions are for
+
+Custom actions run arbitrary code during installation:
+- Stop/start a Windows service
+- Generate a config file with machine-specific values
+- Validate a license key
+- Register with an external service
+- Anything MSI standard actions can't do
+
+### Types
+
+| Type | Description |
+|---|---|
+| `managed` | C# method in a WixSharp CustomAction DLL (strongly typed, debuggable) |
+| `exe` | Run an EXE with arguments; quiet or visible |
+| `script` | Inline VBScript or JScript (legacy; avoid for new work) |
+
+### Proposed syntax
+
+```yaml
+actions:
+  # Stop a service before files are replaced
+  - id: StopMyService
+    type: exe
+    path: "sc.exe"
+    args: "stop MyService"
+    execute: immediate
+    sequence: installExecute
+    before: InstallFiles
+    condition: "Installed"       # only on upgrade
+
+  # Run a managed action after files are in place
+  - id: PostInstallSetup
+    type: managed
+    dll: "MyApp.Installer.dll"   # path resolved via aliases
+    method: "MyApp.Installer.Actions.PostInstall"
+    execute: deferred
+    impersonate: false           # false = run as SYSTEM in installer service
+    sequence: installExecute
+    after: InstallFiles
+    data:                        # passed as CustomActionData to the deferred action
+      installDir: "[INSTALLDIR]"
+      version: "[ProductVersion]"
+
+  # Rollback companion for the deferred action above
+  - id: PostInstallSetup_Rollback
+    type: managed
+    dll: "MyApp.Installer.dll"
+    method: "MyApp.Installer.Actions.PostInstallRollback"
+    execute: rollback
+    sequence: installExecute
+    before: PostInstallSetup
+```
+
+### Deferred actions and CustomActionData
+
+Deferred actions run inside the installer service and cannot read session
+properties. AlliePack automatically generates the immediate `SetProperty`
+action that serializes the `data:` block into `CustomActionData` and schedules
+it immediately before the deferred action. The managed method receives it via
+`session.CustomActionData`.
+
+### The tension with simplicity
+
+Custom actions are a trapdoor out of the declarative model. Once you write one
+you own the compiled DLL, its signing, its versioning, and its compatibility with
+future WiX versions. Before reaching for a custom action, consider whether:
+- An environment variable, registry key, or post-install script can do the job
+- A pre/post-install EXE action (`type: exe`) is sufficient
+- The work belongs in the application itself rather than the installer
+
+---
+
 ## Deferred / Out of Scope
 
 The following are explicitly not planned for the near term:
