@@ -1,16 +1,39 @@
+# Example AlliePack configuration
+# Run: AlliePack.exe docs/allie-pack.yaml --report
+
 product:
-  name: "AlliePack Test"
+  name: "AlliePack"
   manufacturer: "Antigravity"
-  version: "0.1.0"
-  description: "Test installer for AlliePack"
+  version: "1.0.0.0"
+  description: "AlliePack installer builder"
   upgradeCode: "28e08d6c-67c8-47e1-95c5-0e6e7686588a"
   installScope: "perMachine"
+  platform: "x64"
+  # licenseFile: "license.rtf"   # uncomment to add a license agreement dialog
 
 aliases:
-  bin: "src/AlliePack/bin/Debug/net481"
+  bin: "src/AlliePack/bin/Release/net481"
 
 structure:
-  - folder: "InstallDir"
+  - folder: "App"
     contents:
       - source: "bin:AlliePack.exe"
-      - source: "bin:YamlDotNet.dll"
+      - source: "bin:*.dll"
+        excludeFiles:
+          - "*.pdb"
+
+# Uncomment to build from Visual Studio outputs instead:
+#
+# structure:
+#   - folder: "App"
+#     contents:
+#       - solution: "AlliPack.sln"
+#         configuration: "Release"
+#         excludeFiles:
+#           - "*.pdb"
+
+shortcuts:
+  - name: "AlliePack"
+    target: "[INSTALLDIR]\\App\\AlliePack.exe"
+    description: "AlliePack MSI builder"
+    folder: "[ProgramMenuFolder]"

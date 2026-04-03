@@ -1,80 +1,187 @@
 # AlliePack
 
-AlliePack is a YAML-driven installer wrapper designed to simplify the creation of MSI installers using the **WixSharp** and **WiX v4** toolchain. It allows developers to define their installer structure in a human-readable YAML format instead of complex XML or C# scripts.
+AlliePack is a YAML-driven MSI installer builder built on **WixSharp** and **WiX v4**. Define your installer in a human-readable `allie-pack.yaml` file instead of writing complex WiX XML or C# scripts.
 
-## Key Features
+## Features
 
-- **YAML-Driven Configuration**: Define product information, aliases, and file structures in a clean `allie-pack.yaml` file.
-- **Flexible Path Resolution**:
-  - Support for built-in tokens: `[YamlDir]`, `[GitRoot]`, `[CurrentDir]`.
-  - User-defined **Aliases** for quick reference to common build output or source directories.
-  - **Glob Pattern** support for bulk file inclusion (e.g., `bin:*.dll`).
-- **Dry-Run / Report Mode**: Generate a detailed report of the files and folders that will be included in the MSI without actually building it.
-- **WiX v4 Integration**: Leverages the latest WiX Toolset via WixSharp for modern installer features.
+- **YAML configuration** for product info, file structure, and shortcuts
+- **Path resolution** with built-in tokens (`[YamlDir]`, `[GitRoot]`, `[CurrentDir]`) and user-defined aliases
+- **Glob pattern** support for bulk file inclusion (e.g., `bin:*.dll`)
+- **Visual Studio integration** -- resolve build outputs directly from `.sln` or `.csproj` files
+- **Shortcut creation** for Start Menu, Desktop, or any WiX folder property
+- **WPF managed UI** with standard installer dialogs (Welcome, InstallDir, Progress, Exit); optional license agreement dialog
+- **Token substitution** via `--define KEY=VALUE` for injecting version numbers, paths, or any value into YAML at build time
+- **Dry-run / report mode** to preview MSI contents without building
+- **Platform support**: x86, x64, arm64
+- **Install scope**: perMachine or perUser
 
-## Getting Started
+## Prerequisites
 
-### Prerequisites
+- .NET Framework 4.8.1
+- WiX Toolset v4 installed as a dotnet tool:
+  ```
+  dotnet tool install --global wix
+  ```
 
-- .NET Framework 4.8.1 (for the tool itself)
-- [WiX Toolset v4/v5](https://wixtoolset.org/) installed globally (`dotnet tool install --global wix`).
-- Access to the files you wish to package.
+## Usage
 
-### Basic Usage
+```
+AlliePack.exe <config>  [options]
 
-1. Create an `allie-pack.yaml` file in your project root (see example below).
-2. Run AlliePack from the command line:
+Arguments:
+  config                    Path to the allie-pack.yaml configuration file
 
-```bash
-# Generate a report of what will be in the MSI
-AlliePack.exe allie-pack.yaml --report
-
-# Build the actual MSI
-AlliePack.exe allie-pack.yaml
+Options:
+  -r, --report              Preview resolved files without building the MSI
+  -o, --output <path>       Output path for the generated MSI
+  -D, --define KEY=VALUE    Substitute [KEY] tokens in YAML before parsing
+  -v, --verbose             Enable verbose output
 ```
 
-### Configuration Example (`allie-pack.yaml`)
+### Examples
+
+```
+# Build the MSI
+AlliePack.exe allie-pack.yaml
+
+# Preview what will be in the MSI without building
+AlliePack.exe allie-pack.yaml --report
+
+# Inject version and build number at build time
+AlliePack.exe allie-pack.yaml -D VERSION=2.1.0 -D BUILD=42
+
+# Write MSI to a specific location
+AlliePack.exe allie-pack.yaml --output C:\builds\MyApp-2.1.0.msi
+```
+
+## Configuration Reference
+
+### `product`
 
 ```yaml
 product:
-  name: "My Awesome App"
+  name: "My App"
   manufacturer: "My Company"
-  version: "1.0.0"
-  description: "Description of the application"
-  upgradeCode: "YOUR-GUID-HERE"
-  installScope: "perMachine"
+  version: "1.0.0.0"         # Four-part version: Major.Minor.Build.Revision
+  description: "My App installer"
+  upgradeCode: "YOUR-GUID"   # Fixed GUID -- changing this breaks upgrades
+  installScope: "perMachine" # perMachine or perUser
+  platform: "x64"            # x86 (default), x64, arm64
+  installDir: "[ProgramFiles]\\MyCompany\\MyApp"  # optional custom install path
+  licenseFile: "license.rtf" # optional; adds license agreement dialog
+```
 
+### `aliases`
+
+Aliases are short names for paths, used in `source:` fields with the `alias:path` syntax.
+
+```yaml
 aliases:
-  bin: "src/MyApp/bin/Release"
-  docs: "documentation/pdf"
+  bin: "src/MyApp/bin/Release/net481"
+  assets: "resources/dist"
+```
 
+Built-in tokens that can appear anywhere in path values:
+
+| Token | Resolves to |
+|---|---|
+| `[YamlDir]` | Directory containing the YAML config file |
+| `[GitRoot]` | Root of the nearest git repository |
+| `[CurrentDir]` | Current working directory |
+
+### `structure`
+
+Defines the folder and file hierarchy that will be installed. Elements can nest arbitrarily.
+
+```yaml
 structure:
-  - folder: "MainApp"
+  - folder: "App"
     contents:
       - source: "bin:MyApp.exe"
       - source: "bin:*.dll"
-  - folder: "Documentation"
+        excludeFiles:
+          - "*.pdb"
+          - "*.xml"
+
+  - folder: "Plugins"
     contents:
-      - source: "docs:user_manual.pdf"
+      # Include all build outputs from a solution
+      - solution: "src/MyApp.sln"
+        configuration: "Release"
+        platform: "Any CPU"
+        excludeProjects:
+          - "MyApp.Tests"
+        excludeFiles:
+          - "*.pdb"
+
+      # Or from a single project
+      - project: "src/MyApp.Core/MyApp.Core.csproj"
+        configuration: "Release"
+        excludeFiles:
+          - "*.resources.dll"
+
+      # Nested folders
+      - folder: "Data"
+        contents:
+          - source: "assets:*.json"
 ```
 
-## Project Structure (V0.1)
+**Source field syntax:**
+- `alias:pattern` -- files matching `pattern` under the alias path
+- `[Token]\path\pattern` -- token-based path with optional glob
+- Relative paths are resolved from the YAML file's directory
 
-- `Program.cs`: Entry point and CLI parsing.
-- `ConfigModels.cs`: YAML deserialization models.
-- `PathResolver.cs`: Logic for resolving tokens, aliases, and globs.
-- `InstallerBuilder.cs`: WiX/WixSharp project construction and MSI building.
-- `Options.cs`: Command-line argument definitions.
+### `shortcuts`
 
-## Future Roadmap
+```yaml
+shortcuts:
+  - name: "My App"
+    target: "[INSTALLDIR]\\App\\MyApp.exe"
+    description: "Launch My App"
+    folder: "[ProgramMenuFolder]"
 
-- [ ] Support for shortcut creation.
-- [ ] Custom UI Dialogs and branding support.
-- [ ] Advanced WiX features (Registry keys, Services, etc.) via YAML.
-- [ ] Integrated WiX extension management.
+  - name: "My App"
+    target: "[INSTALLDIR]\\App\\MyApp.exe"
+    folder: "[Desktop]"
+```
+
+**Folder values:**
+
+| YAML value | Location |
+|---|---|
+| `[ProgramMenuFolder]` | Start Menu\Programs |
+| `[Desktop]` or `[DesktopFolder]` | Desktop |
+
+## Project Structure
+
+```
+src/AlliePack/
+  Program.cs            Entry point and CLI argument handling
+  Options.cs            Command-line argument definitions
+  ConfigModels.cs       YAML deserialization models
+  PathResolver.cs       Token, alias, and glob path resolution
+  SolutionResolver.cs   Visual Studio solution and project output detection
+  ResolvedFile.cs       Source-to-destination file mapping model
+  InstallerBuilder.cs   WixSharp project construction and MSI generation
+```
+
+## Roadmap
+
+- [x] YAML-driven configuration
+- [x] Path resolution (tokens, aliases, globs)
+- [x] Visual Studio solution and project output resolution
+- [x] Shortcut creation
+- [x] WPF managed UI with standard dialogs
+- [x] License agreement dialog
+- [x] `--define` token substitution
+- [x] x64 / arm64 platform support
+- [ ] Registry keys and values
+- [ ] Environment variables
+- [ ] Optional installer features (component selection)
+- [ ] Release flags and conditional inclusion (multi-client configs)
+- [ ] Modular YAML includes
+- [ ] Variable substitution within YAML
 
 ## License
 
-MIT Licensed.  
-
-Designed with the help of Antigravity AI.
+MIT Licensed.
