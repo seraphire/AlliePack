@@ -4,7 +4,7 @@ This document tracks planned features and their implementation priority. Items a
 
 ## Phase 1 -- System Integration
 
-Direct WixSharp support exists for both of these; they are self-contained additions with no new schema complexity.
+Direct WixSharp support exists for all of these; they are self-contained additions with no new schema complexity.
 
 ### Registry Values
 
@@ -42,6 +42,16 @@ environment:
     scope: user
 ```
 
+### Empty Directory Creation
+
+Create directories in the install tree that start empty. Useful for drop-in locations (tools, plugins, user data) that the application or user populates after install.
+
+```yaml
+structure:
+  - folder: "tools\\vsproj"    # created empty; user drops vsproj.exe here
+  - folder: "plugins\\custom"  # extension point for third-party plugins
+```
+
 ---
 
 ## Phase 2 -- Installer Features
@@ -70,9 +80,11 @@ Files, shortcuts, registry entries, and environment variables will gain an optio
 
 ---
 
-## Phase 3 -- File Groups
+## Phase 3 -- File Groups and Extended Sources
 
-Introduce named file groups as an alternative to inline `structure` entries. Groups provide a cleaner way to organize files, especially when the same set of files needs to be referenced in multiple places or associated with a feature.
+### File Groups
+
+Introduce named file groups as an alternative to inline `structure` entries. Groups provide a cleaner way to organize files, especially when the same set of files needs to be referenced in multiple places, associated with a feature, or installed outside `INSTALLDIR`.
 
 ```yaml
 groups:
@@ -95,11 +107,54 @@ groups:
 
 Individual files gain support for `rename` and explicit component `guid` assignment.
 
+The `destinationFolder` can reference any named directory ID from the `directories` block (see Phase 4), allowing files to be installed outside `INSTALLDIR` -- for example, into `%APPDATA%` or the PowerShell module directory.
+
+### Named Directories
+
+Define named directory IDs for locations outside `INSTALLDIR`. Referenced in `groups` and `shortcuts` as install destinations.
+
+```yaml
+directories:
+  - id: CONFIGDIR
+    path: "[AppDataFolder]\\MyCompany\\MyApp"
+
+  - id: PSMODDIR
+    path: "[PersonalFolder]\\WindowsPowerShell\\Modules\\MyApp"
+```
+
+Standard WiX folder properties (`[AppDataFolder]`, `[PersonalFolder]`, `[CommonAppDataFolder]`, `[LocalAppDataFolder]`, etc.) are supported as path roots.
+
+### Recursive Source
+
+Copy an entire directory tree (not just a flat glob). Needed for content like mdBook help output, pre-built web assets, or any folder with subdirectories.
+
+```yaml
+structure:
+  - folder: "help"
+    contents:
+      - source: "help:**/*"    # ** = recurse into subdirectories
+```
+
+The `**` glob syntax recursively enumerates all files, preserving the relative subdirectory structure under the destination folder.
+
+### Conditional File Install
+
+Install a file only if it does not already exist at the destination. Useful for default config files that should not be overwritten on upgrade.
+
+```yaml
+groups:
+  - id: DefaultConfig
+    destinationFolder: "[AppDataFolder]\\MyCompany"
+    condition: notExists
+    files:
+      - source: "installer/myapp.config.ini"
+```
+
 ---
 
 ## Phase 4 -- Release Flags and Conditional Logic
 
-The most significant feature for complex/multi-client installers. Release flags are boolean switches passed at build time that control which content is included in the MSI. This allows a single config file to produce different installers for different customers or deployment targets.
+The most significant feature for complex/multi-client installers. Release flags are boolean switches passed at build time that control which content is included in the MSI. A single config file can produce different installers for different customers, deployment targets, or installation scopes.
 
 ```yaml
 releaseFlags:
@@ -140,6 +195,60 @@ Flags are activated via a new `--flag` CLI option:
 ```
 AlliePack.exe allie-pack.yaml --flag ClientA --flag InternalTools
 ```
+
+### Scope-Variant Installation Targets
+
+Release flags extend naturally to installation scope, allowing a single config to produce both a per-user and a per-machine MSI. Any field that accepts a plain value can instead accept a conditional map keyed by flag name, with an optional `_else` fallback.
+
+```yaml
+releaseFlags:
+  - PerUser
+  - PerMachine
+
+defaultActiveFlags:
+  - PerUser
+
+product:
+  installScope:
+    PerUser:    perUser
+    PerMachine: perMachine
+    _else:      perUser
+
+  installDir:
+    PerUser:    "[LocalAppDataFolder]\\Programs\\MyCompany\\MyApp"
+    PerMachine: "[ProgramFiles]\\MyCompany\\MyApp"
+    _else:      "[LocalAppDataFolder]\\Programs\\MyCompany\\MyApp"
+
+directories:
+  - id: CONFIGDIR
+    path:
+      PerUser:    "[AppDataFolder]\\MyCompany"
+      PerMachine: "[CommonAppDataFolder]\\MyCompany"
+      _else:      "[AppDataFolder]\\MyCompany"
+
+  - id: PSMODDIR51
+    path:
+      PerUser:    "[PersonalFolder]\\WindowsPowerShell\\Modules\\MyApp"
+      PerMachine: "[ProgramFiles]\\WindowsPowerShell\\Modules\\MyApp"
+      _else:      "[PersonalFolder]\\WindowsPowerShell\\Modules\\MyApp"
+
+environment:
+  - name: MYAPP_HOME
+    value: "[INSTALLDIR]"
+    scope:
+      PerUser:    user
+      PerMachine: machine
+      _else:      user
+```
+
+Build both targets from the same config:
+
+```
+AlliePack.exe allie-pack.yaml --flag PerUser    -D VERSION=1.2.0 --output MyApp-user.msi
+AlliePack.exe allie-pack.yaml --flag PerMachine -D VERSION=1.2.0 --output MyApp-machine.msi
+```
+
+The conditional map syntax (`FlagName: value`, `_else: fallback`) is consistent across all fields that support it: `product.installScope`, `product.installDir`, `directories[].path`, `environment[].scope`, `environment[].value`, `registry[].value`, and variable definitions.
 
 ---
 
@@ -189,6 +298,7 @@ Included files follow the same schema and are merged before processing.
 The following are explicitly not planned for the near term:
 
 - **Bootstrap EXE** -- bundled installer that installs prerequisites; significant complexity
+- **Runtime scope selection** -- single MSI where user picks perUser/perMachine at install time; requires new UI dialog and runtime path switching (see Phase 4 scope-variant approach as the practical alternative)
 - **COM+ / DCOM registration** -- niche requirement
 - **ODBC / database DSN setup** -- niche requirement
 - **Font installation** -- low demand
