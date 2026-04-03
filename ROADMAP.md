@@ -1033,8 +1033,22 @@ installer actually does.
 
 **Two capture modes**
 
-The watch tool must support two fundamentally different modes because different
-installer technologies write files under different process identities:
+The watch tool supports two modes. Notably, the full snapshot diff mode
+requires no real-time process monitoring, no kernel hooks, no ETW consumers,
+and no minifilter drivers -- just two filesystem and registry snapshots with
+a diff between them. This significantly reduces implementation complexity and
+eliminates any risk of the monitoring infrastructure interfering with the
+install itself.
+
+The only thing real-time monitoring can observe that snapshots cannot is
+transient files created and deleted *during* the install but absent afterwards.
+In practice these are almost always temp files, extraction buffers, and rollback
+scripts -- exactly the kind of thing the filter system removes anyway. For the
+purpose of understanding what an installer *leaves behind*, snapshots are
+sufficient and simpler.
+
+The two modes differ in how they scope the result, not in implementation
+complexity:
 
 *Mode 1 -- Process-scoped (EXE installers)*
 For self-contained EXE installers (NSIS, Inno Setup, InstallMaster, etc.) the
