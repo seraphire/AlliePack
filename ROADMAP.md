@@ -888,15 +888,48 @@ what you wrote and what the compiler sees.
 
 ---
 
-## Deferred / Out of Scope
+## Extended Installer Capabilities (Future Phases)
 
-The following are explicitly not planned for the near term:
+The following are real installer requirements that AlliePack should eventually
+support with first-class YAML syntax. None of them are out of scope — they are
+simply not yet prioritised. Until dedicated support lands, all of them are
+reachable today via `wix: fragments:`.
 
-- **Bootstrap EXE** -- promoted to Phase 8 above
-- **COM+ / DCOM registration** -- niche requirement
-- **ODBC / database DSN setup** -- niche requirement
-- **Font installation** -- low demand
-- **Custom UI beyond managed dialogs** -- WixSharp managed UI covers the common cases
+### System components and registration
+
+| Capability | Notes |
+|---|---|
+| **COM / DCOM registration** | `regsvr32`-style self-registration, type library (`.tlb`) registration, class/interface/progid entries in HKCR |
+| **COM+ application** | Register components in the COM+ catalog; set application identity, activation, pooling |
+| **Windows Service** | Install, configure, start, stop, and remove a Windows service; set account, startup type, dependencies |
+| **IIS site / virtual directory** | Create or modify IIS sites, app pools, virtual directories, and application settings |
+| **ODBC data source** | Register a system or user DSN; set driver, server, and connection parameters |
+| **Performance counters** | Register custom performance counter categories and instances |
+| **Scheduled tasks** | Create Windows Task Scheduler entries with trigger, action, and account settings |
+| **Windows Firewall rules** | Open inbound/outbound ports or application exceptions |
+| **Font installation** | Install `.ttf` / `.otf` fonts to the Windows Fonts folder |
+| **Event log sources** | Register a custom event source in the Windows Event Log |
+| **GAC assembly registration** | Install a signed .NET assembly into the Global Assembly Cache |
+
+### Installer experience
+
+| Capability | Notes |
+|---|---|
+| **Custom installer UI** | Dialogs beyond the standard WPF managed UI set; custom welcome screens, product configuration pages |
+| **Splash screen / pre-UI** | Display a splash or EULA before the main UI loads |
+| **Bootstrap prerequisites UI** | Per-prerequisite progress display in the Burn bootstrapper (Phase 9) |
+
+### Notes
+
+- **Windows Service** is the most commonly needed item and the most likely to get
+  a dedicated YAML block in the near term. WixSharp has direct support and the
+  mapping to YAML is straightforward.
+- **IIS** support is closely tied to the ASP.NET project type resolver (Phase 6)
+  and will likely arrive alongside it.
+- **COM / COM+** support will likely arrive as part of Phase 6's COM+ resolver,
+  covering the common registration patterns; edge cases will remain in `wix: fragments:`.
+- Everything else follows demand — if a capability surfaces repeatedly in real
+  configs it moves up the list.
 
 ---
 
