@@ -16,13 +16,15 @@ namespace AlliePack
         private readonly PathResolver _resolver;
         private readonly SolutionResolver _solutionResolver;
         private readonly Options _options;
+        private readonly IReadOnlyList<string> _activeFlags;
 
-        public InstallerBuilder(AlliePackConfig config, PathResolver resolver, SolutionResolver solutionResolver, Options options)
+        public InstallerBuilder(AlliePackConfig config, PathResolver resolver, SolutionResolver solutionResolver, Options options, IReadOnlyList<string> activeFlags)
         {
             _config = config;
             _resolver = resolver;
             _solutionResolver = solutionResolver;
             _options = options;
+            _activeFlags = activeFlags;
         }
 
         public void Build()
@@ -38,7 +40,8 @@ namespace AlliePack
             var uniqueFiles = DeduplicateFiles(allFiles);
 
             var entities = new List<WixEntity>();
-            string installPath = _config.Product.InstallDir ?? (_config.Product.Manufacturer + "\\" + _config.Product.Name);
+            string installPath = _config.Product.InstallDir?.Resolve(_activeFlags)
+                                 ?? (_config.Product.Manufacturer + "\\" + _config.Product.Name);
             installPath = installPath.Replace('/', '\\');
             
             bool is64 = _config.Product.Platform.Equals("x64", StringComparison.OrdinalIgnoreCase) || 
@@ -111,8 +114,10 @@ namespace AlliePack
             // are installed/removed with the product.
             foreach (var ev in _config.Environment)
             {
-                bool isSystem = ev.Scope.Equals("machine", StringComparison.OrdinalIgnoreCase);
-                var envVar = new EnvironmentVariable(ev.Name, ev.Value)
+                string evScope = ev.Scope.Resolve(_activeFlags);
+                string evValue = ev.Value.Resolve(_activeFlags);
+                bool isSystem = evScope.Equals("machine", StringComparison.OrdinalIgnoreCase);
+                var envVar = new EnvironmentVariable(ev.Name, evValue)
                 {
                     System = isSystem,
                     Permanent = false,
@@ -176,7 +181,7 @@ namespace AlliePack
 
             // Named directory groups -- files installed outside INSTALLDIR
             var namedDirMap = _config.Directories
-                .ToDictionary(d => d.Id, d => d.Path, StringComparer.OrdinalIgnoreCase);
+                .ToDictionary(d => d.Id, d => d.Path.Resolve(_activeFlags), StringComparer.OrdinalIgnoreCase);
 
             foreach (var group in _config.Groups)
             {
@@ -195,11 +200,14 @@ namespace AlliePack
                         Console.WriteLine($"Warning: Group '{group.Id}': no files matched '{item.Source}'");
                         continue;
                     }
+                    bool neverOverwrite = string.Equals(group.Condition, "notExists", StringComparison.OrdinalIgnoreCase);
                     foreach (var filePath in resolved)
                     {
                         var wixFile = new File(filePath);
                         if (!string.IsNullOrEmpty(item.Rename))
                             wixFile.Name = item.Rename;
+                        if (neverOverwrite)
+                            wixFile.AttributesDefinition = "Component:NeverOverwrite=yes";
                         groupFiles.Add(wixFile);
                     }
                 }
@@ -242,7 +250,8 @@ namespace AlliePack
             project.Description = _config.Product.Description;
             project.Version = new Version(_config.Product.Version);
 
-            if (_config.Product.InstallScope.Equals("perUser", StringComparison.OrdinalIgnoreCase))
+            string installScope = _config.Product.InstallScope.Resolve(_activeFlags);
+            if (installScope.Equals("perUser", StringComparison.OrdinalIgnoreCase))
             {
                 project.AttributesDefinition = "Scope=perUser";
             }
@@ -642,6 +651,8 @@ namespace AlliePack
             Console.WriteLine($"Manufacturer: {project.ControlPanelInfo.Manufacturer}");
             Console.WriteLine($"Version: {project.Version}");
             Console.WriteLine($"UpgradeCode: {project.GUID}");
+            if (_activeFlags.Any())
+                Console.WriteLine($"Active flags: {string.Join(", ", _activeFlags)}");
             Console.WriteLine("------------------------------------");
 
             foreach (var entity in entities)
@@ -653,7 +664,7 @@ namespace AlliePack
             {
                 Console.WriteLine("Environment Variables:");
                 foreach (var ev in _config.Environment)
-                    Console.WriteLine($"  [{ev.Scope}] {ev.Name} = {ev.Value}");
+                    Console.WriteLine($"  [{ev.Scope.Resolve(_activeFlags)}] {ev.Name} = {ev.Value.Resolve(_activeFlags)}");
             }
 
             if (_config.Groups.Any())
@@ -663,8 +674,9 @@ namespace AlliePack
                 {
                     string dest = _config.Directories
                         .FirstOrDefault(d => d.Id.Equals(group.DestinationDir, StringComparison.OrdinalIgnoreCase))
-                        ?.Path ?? group.DestinationDir;
-                    Console.WriteLine($"  [{group.Id}] -> {dest}");
+                        ?.Path.Resolve(_activeFlags) ?? group.DestinationDir;
+                    string condNote = group.Condition != null ? $" [condition: {group.Condition}]" : "";
+                    Console.WriteLine($"  [{group.Id}] -> {dest}{condNote}");
                     foreach (var item in group.Files)
                         Console.WriteLine($"    {item.Source}{(item.Rename != null ? $" (as {item.Rename})" : "")}");
                 }

@@ -234,7 +234,8 @@ src/AlliePack/
 - [x] Environment variables
 - [x] Named directories and file groups (install outside INSTALLDIR)
 - [ ] Optional installer features (component selection)
-- [ ] Release flags and conditional inclusion (multi-client configs)
+- [x] Release flags and conditional inclusion (`--flag PerUser` / `--flag PerMachine`)
+- [x] `condition: notExists` -- install config files on first install only
 - [ ] Modular YAML includes
 - [ ] Variable substitution within YAML
 

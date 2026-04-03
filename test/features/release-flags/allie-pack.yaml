@@ -1,0 +1,66 @@
+# release-flags feature test
+#
+# Demonstrates: releaseFlags + conditional maps on installScope, installDir,
+# directories[].path, and environment[].scope.
+#
+# A single config produces two distinct MSI targets:
+#
+#   Per-user install (no elevation needed):
+#     AlliePack.exe allie-pack.yaml --flag PerUser    --output output\test-peruser.msi
+#
+#   Per-machine install (elevation required at install time):
+#     AlliePack.exe allie-pack.yaml --flag PerMachine --output output\test-permachine.msi
+#
+#   Preview per-user layout:
+#     AlliePack.exe allie-pack.yaml --flag PerUser    --report
+#
+#   Preview per-machine layout:
+#     AlliePack.exe allie-pack.yaml --flag PerMachine --report
+
+releaseFlags:
+  - PerUser
+  - PerMachine
+
+defaultActiveFlags:
+  - PerUser
+
+product:
+  name: "AlliePack ReleaseFlags Test"
+  manufacturer: "AlliePack"
+  version: "1.0.0.0"
+  description: "Feature test: release flags and conditional field maps"
+  upgradeCode: "f6a7b8c9-d0e1-2345-fabc-456789012345"
+  platform: "x64"
+
+  installScope:
+    PerUser:    perUser
+    PerMachine: perMachine
+    _else:      perUser
+
+  installDir:
+    PerUser:    "[LocalAppDataFolder]\\AlliePack\\test-release-flags"
+    PerMachine: "[ProgramFiles]\\AlliePack\\test-release-flags"
+    _else:      "[LocalAppDataFolder]\\AlliePack\\test-release-flags"
+
+aliases:
+  files: "files"
+
+structure:
+  - folder: "App"
+    contents:
+      - source: "files:README.txt"
+
+directories:
+  - id: PSMODDIR
+    path:
+      PerUser:    "[PersonalFolder]\\WindowsPowerShell\\Modules\\AlliePack-FlagsTest"
+      PerMachine: "[ProgramFiles]\\WindowsPowerShell\\Modules\\AlliePack-FlagsTest"
+      _else:      "[PersonalFolder]\\WindowsPowerShell\\Modules\\AlliePack-FlagsTest"
+
+environment:
+  - name: "MYAPP_HOME"
+    value: "[INSTALLDIR]"
+    scope:
+      PerUser:    user
+      PerMachine: machine
+      _else:      user

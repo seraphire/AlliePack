@@ -24,5 +24,11 @@ namespace AlliePack
                        "Replaces [KEY] anywhere in the YAML before parsing. " +
                        "Example: -D VERSION=2.1.0 -D SUFFIX=Beta")]
         public IEnumerable<string> Defines { get; set; } = new List<string>();
+
+        [Option("flag", Required = false,
+            HelpText = "Active release flag(s). Selects values from conditional maps in the config. " +
+                       "Falls back to defaultActiveFlags in the config, then to unconditional values. " +
+                       "Example: --flag PerUser  or  --flag PerMachine")]
+        public IEnumerable<string> Flags { get; set; } = new List<string>();
     }
 }

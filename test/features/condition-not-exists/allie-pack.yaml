@@ -1,0 +1,43 @@
+# condition-not-exists feature test
+#
+# Demonstrates: condition: notExists on a file group.
+#
+# The default config file (app.config.ini) is installed once on first install
+# and is never overwritten on upgrade, preserving any user customisations.
+#
+# Build:
+#   AlliePack.exe allie-pack.yaml --output output\condition-not-exists-test.msi
+#
+# Report (dry run):
+#   AlliePack.exe allie-pack.yaml --report
+
+product:
+  name: "AlliePack ConditionNotExists Test"
+  manufacturer: "AlliePack"
+  version: "1.0.0.0"
+  description: "Feature test: condition notExists -- preserve user config on upgrade"
+  upgradeCode: "e5f6a7b8-c9d0-1234-efab-345678901234"
+  installScope: "perUser"
+  platform: "x64"
+  installDir: "[LocalAppDataFolder]\\AlliePack\\test-condition-not-exists"
+
+aliases:
+  files:  "files"
+  config: "config"
+
+structure:
+  - folder: "App"
+    contents:
+      - source: "files:README.txt"
+
+directories:
+  - id: APPCONFIGDIR
+    path: "[AppDataFolder]\\AlliePack\\test-condition-not-exists"
+
+groups:
+  # condition: notExists -- written on first install only; never overwritten
+  - id: DefaultConfig
+    destinationDir: APPCONFIGDIR
+    condition: notExists
+    files:
+      - source: "config:app.config.ini"

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using CommandLine;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
@@ -53,13 +54,23 @@ namespace AlliePack
 
                 var deserializer = new DeserializerBuilder()
                     .WithNamingConvention(CamelCaseNamingConvention.Instance)
+                    .WithTypeConverter(new ConditionalStringConverter())
                     .Build();
 
                 var config = deserializer.Deserialize<AlliePackConfig>(yaml);
 
+                // Resolve active release flags: --flag args take precedence over
+                // defaultActiveFlags in the config; either may be empty.
+                var activeFlags = options.Flags.Any()
+                    ? options.Flags.ToList()
+                    : config.DefaultActiveFlags;
+
+                if (activeFlags.Any() && options.Verbose)
+                    Console.WriteLine($"  active flags: {string.Join(", ", activeFlags)}");
+
                 var resolver = new PathResolver(configPath, config.Aliases);
                 var solutionResolver = new SolutionResolver(resolver);
-                var builder = new InstallerBuilder(config, resolver, solutionResolver, options);
+                var builder = new InstallerBuilder(config, resolver, solutionResolver, options, activeFlags);
 
                 Console.WriteLine($"Building MSI for {config.Product.Name} v{config.Product.Version}...");
                 builder.Build();

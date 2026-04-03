@@ -1,9 +1,89 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using YamlDotNet.Core;
+using YamlDotNet.Core.Events;
 using YamlDotNet.Serialization;
 
 namespace AlliePack
 {
+    // -----------------------------------------------------------------------
+    // ConditionalString
+    //
+    // A YAML field that may be either a plain scalar or a flag-conditional map:
+    //
+    //   # Scalar form (no release flags needed):
+    //   installScope: "perUser"
+    //
+    //   # Conditional map form (resolved at build time via --flag):
+    //   installScope:
+    //     PerUser:    perUser
+    //     PerMachine: perMachine
+    //     _else:      perUser
+    //
+    // Call Resolve(activeFlags) to get the effective string value.
+    // -----------------------------------------------------------------------
+
+    public class ConditionalString
+    {
+        private readonly string? _scalar;
+        private readonly Dictionary<string, string>? _map;
+
+        public ConditionalString(string scalar) { _scalar = scalar; }
+        public ConditionalString(Dictionary<string, string> map) { _map = map; }
+
+        public string Resolve(IReadOnlyList<string> activeFlags)
+        {
+            if (_scalar != null) return _scalar;
+            if (_map == null) return string.Empty;
+
+            foreach (var flag in activeFlags)
+                if (_map.TryGetValue(flag, out var val)) return val;
+
+            if (_map.TryGetValue("_else", out var fallback)) return fallback;
+            return string.Empty;
+        }
+
+        public override string ToString() => _scalar ?? $"({_map?.Count ?? 0}-entry conditional map)";
+    }
+
+    public class ConditionalStringConverter : IYamlTypeConverter
+    {
+        public bool Accepts(Type type) => type == typeof(ConditionalString);
+
+        public object ReadYaml(IParser parser, Type type, ObjectDeserializer rootDeserializer)
+        {
+            if (parser.Current is Scalar scalar)
+            {
+                parser.MoveNext();
+                return new ConditionalString(scalar.Value);
+            }
+            if (parser.Current is MappingStart)
+            {
+                parser.MoveNext();
+                var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                while (!(parser.Current is MappingEnd))
+                {
+                    var key = ((Scalar)parser.Current!).Value;
+                    parser.MoveNext();
+                    var value = ((Scalar)parser.Current!).Value;
+                    parser.MoveNext();
+                    map[key] = value;
+                }
+                parser.MoveNext(); // consume MappingEnd
+                return new ConditionalString(map);
+            }
+            throw new InvalidOperationException("Expected scalar or mapping for ConditionalString");
+        }
+
+        public void WriteYaml(IEmitter emitter, object? value, Type type, ObjectSerializer serializer)
+            => throw new NotImplementedException();
+    }
+
+    // -----------------------------------------------------------------------
+    // Top-level config
+    // -----------------------------------------------------------------------
+
     public class AlliePackConfig
     {
         [YamlMember(Alias = "product")]
@@ -26,16 +106,19 @@ namespace AlliePack
 
         [YamlMember(Alias = "groups")]
         public List<FileGroupConfig> Groups { get; set; } = new();
+
+        // GAP-5: release flags declared in the config file
+        [YamlMember(Alias = "releaseFlags")]
+        public List<string> ReleaseFlags { get; set; } = new();
+
+        // GAP-5: flags active when no --flag argument is passed
+        [YamlMember(Alias = "defaultActiveFlags")]
+        public List<string> DefaultActiveFlags { get; set; } = new();
     }
 
-    public class ShortcutInfo
-    {
-        public string Name { get; set; } = string.Empty;
-        public string Target { get; set; } = string.Empty;
-        public string Description { get; set; } = string.Empty;
-        public string? Icon { get; set; }
-        public string Folder { get; set; } = string.Empty;
-    }
+    // -----------------------------------------------------------------------
+    // Product
+    // -----------------------------------------------------------------------
 
     public class ProductInfo
     {
@@ -44,10 +127,13 @@ namespace AlliePack
         public string Version { get; set; } = "1.0.0.0";
         public string Description { get; set; } = string.Empty;
         public string UpgradeCode { get; set; } = Guid.NewGuid().ToString();
-        public string InstallScope { get; set; } = "perMachine"; // perMachine or perUser
+
+        // GAP-5: supports conditional map (PerUser/PerMachine) or plain scalar
+        [YamlMember(Alias = "installScope")]
+        public ConditionalString InstallScope { get; set; } = new ConditionalString("perMachine");
 
         [YamlMember(Alias = "installDir")]
-        public string? InstallDir { get; set; }
+        public ConditionalString? InstallDir { get; set; }
 
         public string Platform { get; set; } = "x86"; // x86, x64, arm64
 
@@ -55,26 +141,41 @@ namespace AlliePack
         public string? LicenseFile { get; set; }
     }
 
+    // -----------------------------------------------------------------------
+    // Environment variables
+    // -----------------------------------------------------------------------
+
     public class EnvVarConfig
     {
         [YamlMember(Alias = "name")]
         public string Name { get; set; } = string.Empty;
 
+        // GAP-5: supports conditional map
         [YamlMember(Alias = "value")]
-        public string Value { get; set; } = string.Empty;
+        public ConditionalString Value { get; set; } = new ConditionalString(string.Empty);
 
+        // GAP-5: supports conditional map (user/machine)
         [YamlMember(Alias = "scope")]
-        public string Scope { get; set; } = "user"; // user or machine
+        public ConditionalString Scope { get; set; } = new ConditionalString("user");
     }
+
+    // -----------------------------------------------------------------------
+    // Named directories
+    // -----------------------------------------------------------------------
 
     public class DirectoryConfig
     {
         [YamlMember(Alias = "id")]
         public string Id { get; set; } = string.Empty;
 
+        // GAP-5: supports conditional map
         [YamlMember(Alias = "path")]
-        public string Path { get; set; } = string.Empty;
+        public ConditionalString Path { get; set; } = new ConditionalString(string.Empty);
     }
+
+    // -----------------------------------------------------------------------
+    // File groups
+    // -----------------------------------------------------------------------
 
     public class FileGroupItem
     {
@@ -93,9 +194,30 @@ namespace AlliePack
         [YamlMember(Alias = "destinationDir")]
         public string DestinationDir { get; set; } = string.Empty;
 
+        // GAP-4: condition: notExists -- skip if the destination file already exists
+        [YamlMember(Alias = "condition")]
+        public string? Condition { get; set; }
+
         [YamlMember(Alias = "files")]
         public List<FileGroupItem> Files { get; set; } = new();
     }
+
+    // -----------------------------------------------------------------------
+    // Shortcuts
+    // -----------------------------------------------------------------------
+
+    public class ShortcutInfo
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Target { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public string? Icon { get; set; }
+        public string Folder { get; set; } = string.Empty;
+    }
+
+    // -----------------------------------------------------------------------
+    // Structure elements
+    // -----------------------------------------------------------------------
 
     public class StructureElement
     {
