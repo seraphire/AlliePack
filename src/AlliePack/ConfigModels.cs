@@ -41,6 +41,9 @@ namespace AlliePack
         public string? InstallDir { get; set; }
 
         public string Platform { get; set; } = "x86"; // x86, x64, arm64
+
+        [YamlMember(Alias = "licenseFile")]
+        public string? LicenseFile { get; set; }
     }
 
     public class StructureElement

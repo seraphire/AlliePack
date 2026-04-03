@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using WixSharp;
+using WixSharp.UI.WPF;
 using YamlDotNet.Serialization;
 using Microsoft.Extensions.FileSystemGlobbing;
 using File = WixSharp.File;
@@ -158,7 +159,7 @@ namespace AlliePack
                 }
             }
 
-            var project = new Project(_config.Product.Name, entities.ToArray());
+            var project = new ManagedProject(_config.Product.Name, entities.ToArray());
 
             if (_config.Product.Platform.Equals("x64", StringComparison.OrdinalIgnoreCase))
             {
@@ -185,6 +186,33 @@ namespace AlliePack
 
             // Suppress "Ambiguous short name" warning as we are explicitly generating them
             project.WixOptions = "-sw1044";
+
+            // Configure installer UI. Always use ManagedUI for a consistent look;
+            // include the licence dialog only when a license file is supplied.
+            var ui = new ManagedUI();
+            if (!string.IsNullOrEmpty(_config.Product.LicenseFile))
+            {
+                project.LicenceFile = _resolver.Resolve(_config.Product.LicenseFile!);
+                ui.InstallDialogs
+                    .Add<WelcomeDialog>()
+                    .Add<LicenceDialog>()
+                    .Add<InstallDirDialog>()
+                    .Add<ProgressDialog>()
+                    .Add<ExitDialog>();
+            }
+            else
+            {
+                ui.InstallDialogs
+                    .Add<WelcomeDialog>()
+                    .Add<InstallDirDialog>()
+                    .Add<ProgressDialog>()
+                    .Add<ExitDialog>();
+            }
+            ui.ModifyDialogs
+                .Add<MaintenanceTypeDialog>()
+                .Add<ProgressDialog>()
+                .Add<ExitDialog>();
+            project.ManagedUI = ui;
 
             if (_options.ReportOnly)
             {
