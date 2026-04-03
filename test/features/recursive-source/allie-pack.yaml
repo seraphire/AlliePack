@@ -1,0 +1,36 @@
+# recursive-source feature test
+#
+# Demonstrates: ** glob pattern for recursive directory inclusion.
+#
+# Source tree under files/:
+#   index.html
+#   data/overview.html
+#   data/en/strings.txt
+#   data/fr/strings.txt
+#
+# The "help:**/*" source copies the entire tree, preserving subdirectory
+# structure, so all four files land under Help\ in the installer.
+#
+# Build:
+#   AlliePack.exe allie-pack.yaml --output output\recursive-source-test.msi
+#
+# Report (dry run):
+#   AlliePack.exe allie-pack.yaml --report
+
+product:
+  name: "AlliePack RecursiveSource Test"
+  manufacturer: "AlliePack"
+  version: "1.0.0.0"
+  description: "Feature test: recursive ** glob source"
+  upgradeCode: "d4e5f6a7-b8c9-0123-defa-234567890123"
+  installScope: "perUser"
+  platform: "x64"
+  installDir: "[LocalAppDataFolder]\\AlliePack\\test-recursive-source"
+
+aliases:
+  help: "files"
+
+structure:
+  - folder: "Help"
+    contents:
+      - source: "help:**/*"

@@ -229,6 +229,7 @@ src/AlliePack/
 - [x] License agreement dialog
 - [x] `--define` token substitution
 - [x] x64 / arm64 platform support
+- [x] Recursive `**` glob source (preserves subdirectory structure)
 - [ ] Registry keys and values
 - [x] Environment variables
 - [x] Named directories and file groups (install outside INSTALLDIR)

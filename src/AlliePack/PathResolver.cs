@@ -68,13 +68,35 @@ namespace AlliePack
 
         public List<string> ResolveGlob(string pattern)
         {
+            return ResolveGlobWithPaths(pattern).Select(t => t.AbsolutePath).ToList();
+        }
+
+        public List<(string AbsolutePath, string RelativePath)> ResolveGlobWithPaths(string pattern)
+        {
             string resolvedPattern = Resolve(pattern);
+
+            if (resolvedPattern.Contains("**"))
+            {
+                int idx = resolvedPattern.IndexOf("**", StringComparison.Ordinal);
+                string baseDir = resolvedPattern.Substring(0, idx).TrimEnd('\\', '/');
+                string filePattern = resolvedPattern.Substring(idx + 2).TrimStart('\\', '/');
+                if (string.IsNullOrEmpty(filePattern)) filePattern = "*";
+
+                if (!Directory.Exists(baseDir)) return new List<(string, string)>();
+
+                return Directory.GetFiles(baseDir, filePattern, SearchOption.AllDirectories)
+                    .Select(f => (f, f.Substring(baseDir.Length).TrimStart('\\', '/')))
+                    .ToList();
+            }
+
             string? dir = Path.GetDirectoryName(resolvedPattern);
-            string? filePattern = Path.GetFileName(resolvedPattern);
+            string? filePat = Path.GetFileName(resolvedPattern);
 
-            if (dir == null || !Directory.Exists(dir)) return new List<string>();
+            if (dir == null || !Directory.Exists(dir)) return new List<(string, string)>();
 
-            return Directory.GetFiles(dir, filePattern).ToList();
+            return Directory.GetFiles(dir, filePat)
+                .Select(f => (f, Path.GetFileName(f)))
+                .ToList();
         }
     }
 }

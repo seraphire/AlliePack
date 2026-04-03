@@ -1,0 +1,44 @@
+# named-dirs feature test
+#
+# Demonstrates: directories + groups -- installing files outside INSTALLDIR.
+#
+# This installer places the main app under INSTALLDIR and writes a
+# PowerShell module to the user's WindowsPowerShell\Modules folder.
+#
+# Build:
+#   AlliePack.exe allie-pack.yaml --output output\named-dirs-test.msi
+#
+# Report (dry run):
+#   AlliePack.exe allie-pack.yaml --report
+
+product:
+  name: "AlliePack NamedDirs Test"
+  manufacturer: "AlliePack"
+  version: "1.0.0.0"
+  description: "Feature test: named directories and file groups"
+  upgradeCode: "c3d4e5f6-a7b8-9012-cdef-123456789012"
+  installScope: "perUser"
+  platform: "x64"
+  installDir: "[LocalAppDataFolder]\\AlliePack\\test-named-dirs"
+
+aliases:
+  files:   "files"
+  scripts: "scripts"
+
+structure:
+  - folder: "App"
+    contents:
+      - source: "files:README.txt"
+
+# Named destinations outside INSTALLDIR
+directories:
+  - id: PSMODDIR
+    path: "[PersonalFolder]\\WindowsPowerShell\\Modules\\AlliePack-Test"
+
+# Files installed to named destinations
+groups:
+  - id: PsModule
+    destinationDir: PSMODDIR
+    files:
+      - source: "scripts:TestModule.psm1"
+      - source: "scripts:TestModule.psd1"

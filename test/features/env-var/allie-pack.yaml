@@ -1,0 +1,35 @@
+# env-var feature test
+#
+# Demonstrates: environment variables set during installation.
+#
+# After install, open a new terminal and verify:
+#   echo %MYAPP_HOME%    -> install directory path
+#
+# Build:
+#   AlliePack.exe allie-pack.yaml --output output\env-var-test.msi
+#
+# Report (dry run):
+#   AlliePack.exe allie-pack.yaml --report
+
+product:
+  name: "AlliePack EnvVar Test"
+  manufacturer: "AlliePack"
+  version: "1.0.0.0"
+  description: "Feature test: environment variables"
+  upgradeCode: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+  installScope: "perUser"
+  platform: "x64"
+  installDir: "[LocalAppDataFolder]\\AlliePack\\test-env-var"
+
+aliases:
+  files: "files"
+
+structure:
+  - folder: "App"
+    contents:
+      - source: "files:README.txt"
+
+environment:
+  - name: "MYAPP_HOME"
+    value: "[INSTALLDIR]"
+    scope: user

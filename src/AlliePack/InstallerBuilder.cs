@@ -207,14 +207,14 @@ namespace AlliePack
                 if (!groupFiles.Any()) continue;
 
                 // Build Dir hierarchy for the destination path
-                string[] pathParts = destPath.Replace('/', '\\')
+                string[] groupPathParts = destPath.Replace('/', '\\')
                     .Split(new[] { '\\' }, StringSplitOptions.RemoveEmptyEntries);
 
-                Dir groupRootDir = new Dir(pathParts[0]);
+                Dir groupRootDir = new Dir(groupPathParts[0]);
                 Dir leafDir = groupRootDir;
-                for (int i = 1; i < pathParts.Length; i++)
+                for (int i = 1; i < groupPathParts.Length; i++)
                 {
-                    var next = new Dir(pathParts[i]);
+                    var next = new Dir(groupPathParts[i]);
                     leafDir.Dirs = new[] { next };
                     leafDir = next;
                 }
@@ -366,41 +366,43 @@ namespace AlliePack
 
             if (!string.IsNullOrEmpty(element.Source))
             {
-                var files = _resolver.ResolveGlob(element.Source ?? "");
-                
+                var filesWithPaths = _resolver.ResolveGlobWithPaths(element.Source ?? "");
+
                 // Exclusions
                 if (element.ExcludeFiles.Count > 0)
                 {
                     var matcher = new Matcher();
                     matcher.AddInclude("**/*");
                     foreach (var exc in element.ExcludeFiles) matcher.AddExclude(exc);
-                    
-                    files = files.Where(f => {
-                        string? dir = Path.GetDirectoryName(f);
+
+                    filesWithPaths = filesWithPaths.Where(t => {
+                        string? dir = Path.GetDirectoryName(t.AbsolutePath);
                         if (dir == null) return true;
                         var res = matcher.Execute(new Microsoft.Extensions.FileSystemGlobbing.Abstractions.DirectoryInfoWrapper(new DirectoryInfo(dir)));
-                        return res.Files.Any(m => Path.Combine(dir, m.Path).Equals(f, StringComparison.OrdinalIgnoreCase));
+                        return res.Files.Any(m => Path.Combine(dir, m.Path).Equals(t.AbsolutePath, StringComparison.OrdinalIgnoreCase));
                     }).ToList();
                 }
 
-                if (files.Count == 0)
+                if (filesWithPaths.Count == 0)
                 {
                     if (!string.IsNullOrEmpty(element.Source) && !element.Source.Contains("*") && !element.Source.Contains("?"))
                     {
                         string sourcePath = _resolver.Resolve(element.Source ?? "");
-                        result.Add(new ResolvedFile { 
-                            SourcePath = sourcePath, 
-                            RelativeDestinationPath = Path.Combine(newPath, Path.GetFileName(sourcePath)) 
+                        result.Add(new ResolvedFile {
+                            SourcePath = sourcePath,
+                            RelativeDestinationPath = Path.Combine(newPath, Path.GetFileName(sourcePath))
                         });
                     }
                 }
                 else
                 {
-                    foreach (var f in files)
+                    foreach (var (absPath, relPath) in filesWithPaths)
                     {
-                        result.Add(new ResolvedFile { 
-                            SourcePath = f, 
-                            RelativeDestinationPath = Path.Combine(newPath, Path.GetFileName(f)) 
+                        result.Add(new ResolvedFile {
+                            SourcePath = absPath,
+                            RelativeDestinationPath = string.IsNullOrEmpty(newPath)
+                                ? relPath
+                                : newPath + "\\" + relPath
                         });
                     }
                 }
