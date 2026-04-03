@@ -293,12 +293,126 @@ Included files follow the same schema and are merged before processing.
 
 ---
 
+## Phase 6 -- Runtime Scope Selection (Single-MSI Install-for-Me / Install-for-All)
+
+The Phase 4 approach produces two separate MSIs from one config — a deliberate
+design choice that keeps each installer simple and predictable. This phase adds
+an alternative: a **single MSI** that presents a scope choice in the installer UI
+and adapts its install paths at runtime.
+
+### Why two MSIs is usually the right call
+
+The two-MSI model is the standard for developer and enterprise tools:
+- IT administrators deploy the per-machine MSI silently via SCCM/Intune; end users
+  self-install the per-user MSI without elevation.
+- Each MSI is independently signed, tested, and distributed through separate channels.
+- The user never sees a confusing "install for me vs everyone" choice.
+
+### When single-MSI scope selection is worth it
+
+Consumer software that ships one download link for everyone (VS Code, Notepad++, 7-Zip)
+benefits from a single MSI. The user sees a radio button in the installer UI:
+- **Install for me only** -- no elevation, per-user paths
+- **Install for all users** -- requires admin elevation, per-machine paths
+
+### How it works under the hood
+
+The MSI engine uses the `ALLUSERS` property to switch scope at runtime:
+- `ALLUSERS=1` → per-machine, elevation required
+- `ALLUSERS=""` → per-user, no elevation
+
+WiX provides the `WixUI_Advanced` dialog set which includes this screen. Install
+paths use `[APPLICATIONFOLDER]`, a WiX property that resolves differently based on
+`ALLUSERS`. All conditional paths must be WiX runtime properties — they cannot be
+resolved by AlliePack at build time.
+
+### Proposed AlliePack syntax
+
+```yaml
+product:
+  installMode: choice          # single MSI with runtime scope dialog
+  # installMode: perUser       # (default) build a dedicated per-user MSI
+  # installMode: perMachine    # build a dedicated per-machine MSI
+
+  # installDir is split into two runtime-resolved properties:
+  installDirUser:    "[LocalAppDataFolder]\\Programs\\MyCompany\\MyApp"
+  installDirMachine: "[ProgramFiles]\\MyCompany\\MyApp"
+```
+
+`installMode: choice` changes the installer to use `WixUI_Advanced` and renders the
+scope-selection dialog. All other config fields (directories, env vars, etc.) remain
+the same; AlliePack emits them with appropriate WiX conditions automatically.
+
+---
+
+## Phase 7 -- Winget Package Manifest Generation
+
+[Windows Package Manager (winget)](https://learn.microsoft.com/en-us/windows/package-manager/)
+is the official Windows package manager, backed by the community
+[winget-pkgs](https://github.com/microsoft/winget-pkgs) repository. Publishing a
+winget manifest makes your tool installable with a single command:
+
+```
+winget install MyCompany.MyApp
+```
+
+AlliePack already knows most of what a winget manifest needs — product name, version,
+manufacturer, platform, install scope, and upgrade code. This phase adds manifest
+generation as a build output alongside the MSI.
+
+### What winget manifests contain
+
+A winget submission is a folder of YAML files:
+- **version manifest** -- package identity and version
+- **installer manifest** -- MSI download URL, SHA256 hash, scope, silent install flags
+- **defaultLocale manifest** -- description, license, publisher URL, tags
+
+### Proposed config additions
+
+```yaml
+product:
+  name: "MyApp"
+  manufacturer: "MyCompany"
+  version: "1.2.3.0"
+  ...
+
+winget:
+  packageIdentifier: "MyCompany.MyApp"   # winget store ID (required)
+  publisherUrl: "https://mycompany.com"
+  licenseUrl: "https://mycompany.com/license"
+  tags:
+    - developer-tools
+    - cli
+  shortDescription: "A short one-line description for the winget catalog"
+  # installerUrl and sha256 are set at publish time (post-build)
+```
+
+### Proposed CLI usage
+
+```
+# Build MSI and generate winget manifests alongside it
+AlliePack.exe allie-pack.yaml --flag PerUser -D VERSION=1.2.3 --output dist\MyApp-user.msi --winget dist\winget
+
+# Output in dist\winget\:
+#   MyCompany.MyApp.yaml           (version manifest)
+#   MyCompany.MyApp.installer.yaml (installer manifest, URL placeholder)
+#   MyCompany.MyApp.locale.en-US.yaml
+```
+
+AlliePack fills in all metadata it knows at build time. The installer URL and SHA256
+are injected in a post-build step (or left as placeholders for a CI pipeline to fill
+before submitting the PR to winget-pkgs).
+
+This feature makes AlliePack a complete distribution pipeline for developer tools:
+one config drives both the MSI build and the winget submission package.
+
+---
+
 ## Deferred / Out of Scope
 
 The following are explicitly not planned for the near term:
 
 - **Bootstrap EXE** -- bundled installer that installs prerequisites; significant complexity
-- **Runtime scope selection** -- single MSI where user picks perUser/perMachine at install time; requires new UI dialog and runtime path switching (see Phase 4 scope-variant approach as the practical alternative)
 - **COM+ / DCOM registration** -- niche requirement
 - **ODBC / database DSN setup** -- niche requirement
 - **Font installation** -- low demand
