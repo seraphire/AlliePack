@@ -1,0 +1,22 @@
+product:
+  name: "AlliePack Base Test"
+  manufacturer: "AlliePack"
+  version: "1.0.0.0"
+  description: "Base test installer for AlliePack - installs a single README."
+  upgradeCode: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+  installScope: "perMachine"
+  platform: "x64"
+
+aliases:
+  files: "files"
+
+structure:
+  - folder: "App"
+    contents:
+      - source: "files:README.txt"
+
+shortcuts:
+  - name: "AlliePack Base Test"
+    target: "[INSTALLDIR]\\App\\README.txt"
+    description: "AlliePack Base Test"
+    folder: "[ProgramMenuFolder]"
