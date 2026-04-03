@@ -1,4 +1,4 @@
-# AlliePack Roadmap
+﻿# AlliePack Roadmap
 
 This document tracks planned features and their implementation priority. Items are grouped into phases based on dependency order and complexity. The [AlliePack-docs](https://github.com/seraphire/AlliePack-docs) repository contains detailed design specifications and YAML schema examples for many of these features.
 
@@ -324,7 +324,166 @@ Included files follow the same schema and are merged before processing.
 
 ---
 
-## Phase 6 -- Runtime Scope Selection (Single-MSI Install-for-Me / Install-for-All)
+## Phase 6 -- Project Type Resolvers
+
+AlliePack already has two project type resolvers: `solution:` and `project:` know
+how to find Visual Studio build outputs without the user listing files manually.
+This phase generalises that pattern into a first-class, extensible system for other
+project ecosystems.
+
+### The concept
+
+A **project type resolver** answers the question: *given a project root, what files
+should be installed, where should they go, and what additional installer steps are
+needed?* The `solution:` resolver already does this for MSBuild. The goal is the
+same capability for Electron, ASP.NET published sites, Node packages, and others —
+and a mechanism for users to define their own.
+
+The syntax is consistent with what already exists: a new keyword in `structure:`
+alongside `solution:` and `project:`.
+
+### Built-in resolvers
+
+**Electron**
+
+Electron apps produce a platform-specific folder (`dist/`, `out/`) containing the
+main EXE, Chromium runtime, `resources/`, `locales/`, and supporting DLLs. The
+whole tree is installed recursively. The resolver knows what to exclude (`.map`
+files, crash reporter symbols) and what the executable name is.
+
+```yaml
+structure:
+  - type: electron
+    path: "."              # project root (package.json found here)
+    # defaults: reads "name" and "version" from package.json if not set in product:
+    # output: "dist"       # override if build tool uses a different output folder
+    excludeFiles:
+      - "*.map"
+```
+
+**ASP.NET / dotnet publish**
+
+Runs (or finds) a `dotnet publish` output and installs the publish tree. Knows to
+include `wwwroot/`, `web.config`, and all DLLs while excluding build intermediates.
+Optionally configures an IIS virtual directory (when combined with a future
+`iis:` block).
+
+```yaml
+structure:
+  - type: aspnet
+    project: "src/MyApp.Web/MyApp.Web.csproj"
+    configuration: Release
+    # publish output is resolved automatically; no manual path needed
+```
+
+**Node / npm package**
+
+Installs the bundled output of an npm project. Expects either a pre-built `dist/`
+folder or runs the build script. Reads `package.json` for name and version.
+
+```yaml
+structure:
+  - type: npm
+    path: "."
+    script: "build"        # npm script to run before packaging (optional)
+    output: "dist"
+```
+
+**COM+ Application**
+
+COM+ projects require file installation plus component registration in the COM+
+catalog. This resolver handles both: installs the DLLs and registers the COM+
+application. Requires `regsvr32`-style registration or a `*.tlb` type library.
+See also: Phase 10 (Custom Actions) for complex COM+ scenarios.
+
+```yaml
+structure:
+  - type: com-plus
+    project: "src/MyApp.ComServer/MyApp.ComServer.csproj"
+    configuration: Release
+    applicationName: "MyApp COM+ Application"
+    # generates the correct registration actions automatically
+```
+
+### User-defined resolvers
+
+Not every project type warrants a built-in resolver. Users can define their own
+as a YAML template and share them via the `includes:` mechanism (Phase 5).
+
+```yaml
+# my-resolver.allie-type.yaml
+resolver:
+  id: my-electron-variant
+  description: "Custom Electron layout for this org"
+  outputDir: "release/win-unpacked"
+  include:
+    - "**/*"
+  exclude:
+    - "*.map"
+    - "*.pdb"
+    - "chrome_debug.log"
+  installSubdir: "App"
+```
+
+```yaml
+# allie-pack.yaml
+includes:
+  - my-resolver.allie-type.yaml
+
+structure:
+  - type: my-electron-variant
+    path: "."
+```
+
+Community-maintained resolver libraries (published as YAML files or NuGet packages)
+can provide types for frameworks AlliePack doesn't know about yet. The same
+traceability principle applies: a resolver must produce the same WiX output as if
+the user had written the `structure:` entries by hand — nothing opaque, nothing
+that can't be inspected with `--report`.
+
+### Installer theme packages
+
+The same include/resolver mechanism supports **installer themes** — packages that
+control the visual appearance and branding of the installer UI. A company that
+ships multiple products can define a corporate theme once and apply it consistently
+across all of them.
+
+A theme package provides:
+- Installer UI artwork (banner, dialog background, logo)
+- Colour scheme and font overrides for the WPF managed UI
+- Default dialog sequencing and wording (e.g. a standard license preamble)
+- Optionally: a standard `shortcuts:` or `environment:` block shared across products
+
+```yaml
+# corp-theme.allie-theme.yaml  (maintained by the org, shared across products)
+theme:
+  banner:     "assets/installer-banner.bmp"
+  background: "assets/installer-bg.bmp"
+  primaryColor: "#1A3A5C"
+  productFamily: "Acme Developer Tools"
+  defaultLicense: "assets/standard-eula.rtf"
+```
+
+```yaml
+# myapp/allie-pack.yaml
+includes:
+  - ../shared/corp-theme.allie-theme.yaml
+
+product:
+  name: "MyApp"
+  ...
+# UI picks up banner, background, and license from the theme automatically.
+# Any field in the theme can be overridden locally.
+```
+
+Theme packages are a natural complement to the project type resolver system:
+resolvers handle *what gets installed*, themes handle *how the installation looks*.
+Both are expressed as includable YAML and follow the same zero-config-default rule —
+a config without a theme include looks and works exactly as it does today.
+
+---
+
+## Phase 7 -- Runtime Scope Selection (Single-MSI Install-for-Me / Install-for-All)
 
 The Phase 4 approach produces two separate MSIs from one config — a deliberate
 design choice that keeps each installer simple and predictable. This phase adds
@@ -376,7 +535,7 @@ the same; AlliePack emits them with appropriate WiX conditions automatically.
 
 ---
 
-## Phase 7 -- Winget Package Manifest Generation
+## Phase 8 -- Winget Package Manifest Generation
 
 [Windows Package Manager (winget)](https://learn.microsoft.com/en-us/windows/package-manager/)
 is the official Windows package manager, backed by the community
@@ -439,7 +598,7 @@ one config drives both the MSI build and the winget submission package.
 
 ---
 
-## Phase 8 -- Bundles (Bootstrap EXE + Prerequisites)
+## Phase 9 -- Bundles (Bootstrap EXE + Prerequisites)
 
 > **Complexity warning.** WiX Burn bundles are the most powerful — and most
 > complicated — thing in the WiX ecosystem. This phase is deliberately last
@@ -550,7 +709,7 @@ if a bundle is declared, to the bootstrapper EXE as well.
 
 ---
 
-## Phase 9 -- Action Sequencing
+## Phase 10 -- Action Sequencing
 
 MSI installations run in defined **sequences** — ordered lists of actions that
 the installer engine executes at specific stages. AlliePack currently places
@@ -604,7 +763,7 @@ hatch for unusual requirements.
 
 ---
 
-## Phase 10 -- Custom Actions
+## Phase 11 -- Custom Actions
 
 > **This is the most advanced feature in the roadmap and the one most at odds with
 > AlliePack's simplicity principle.** Custom actions require shipping compiled code
