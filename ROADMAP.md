@@ -14,8 +14,19 @@ that appear in someone else's config and demand explanation.
 - New sections over nested keys: a new top-level block (like `winget:`, `features:`) is
   less intimidating than adding more keys to `product:` -- if you don't need it, skip it
 - No new required fields -- everything has a sane default or is omitted entirely
-- An advanced developer should be able to find and use every capability; an average
-  developer should never be forced to read past what they need
+- An average developer should never be forced to read past what they need; an installer
+  engineer who knows WiX should be able to find and use every capability
+
+**Manage complexity -- don't hide it.** There is a critical difference. Hiding
+complexity means an expert hits a wall with no way through. Managing it means the
+expert never has to deal with it *unless they choose to* -- but when they do, the
+full power is there. Every abstraction should have a reach-through for someone who
+knows what they are doing.
+
+**The traceability test:** an installer engineer looking at AlliePack's generated WiX
+output should be able to recognise what each part does and trace it back to the YAML
+that produced it. If the abstraction is so thick that the generated XML is
+unrecognisable, the feature has been over-engineered and will eventually trap someone.
 
 The YAML structure itself communicates complexity level. `product:` is always needed.
 `aliases:`, `structure:` are almost always needed. `directories:`, `groups:`,
