@@ -174,6 +174,58 @@ namespace AlliePack
                 }
             }
 
+            // Named directory groups -- files installed outside INSTALLDIR
+            var namedDirMap = _config.Directories
+                .ToDictionary(d => d.Id, d => d.Path, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var group in _config.Groups)
+            {
+                if (!namedDirMap.TryGetValue(group.DestinationDir, out var destPath))
+                {
+                    Console.WriteLine($"Warning: Group '{group.Id}' references unknown directory '{group.DestinationDir}'");
+                    continue;
+                }
+
+                var groupFiles = new List<File>();
+                foreach (var item in group.Files)
+                {
+                    var resolved = _resolver.ResolveGlob(item.Source);
+                    if (!resolved.Any())
+                    {
+                        Console.WriteLine($"Warning: Group '{group.Id}': no files matched '{item.Source}'");
+                        continue;
+                    }
+                    foreach (var filePath in resolved)
+                    {
+                        var wixFile = new File(filePath);
+                        if (!string.IsNullOrEmpty(item.Rename))
+                            wixFile.Name = item.Rename;
+                        groupFiles.Add(wixFile);
+                    }
+                }
+
+                if (!groupFiles.Any()) continue;
+
+                // Build Dir hierarchy for the destination path
+                string[] pathParts = destPath.Replace('/', '\\')
+                    .Split(new[] { '\\' }, StringSplitOptions.RemoveEmptyEntries);
+
+                Dir groupRootDir = new Dir(pathParts[0]);
+                Dir leafDir = groupRootDir;
+                for (int i = 1; i < pathParts.Length; i++)
+                {
+                    var next = new Dir(pathParts[i]);
+                    leafDir.Dirs = new[] { next };
+                    leafDir = next;
+                }
+
+                leafDir.Files = groupFiles.ToArray();
+                entities.Add(groupRootDir);
+
+                if (_options.Verbose)
+                    Console.WriteLine($"Group '{group.Id}': {groupFiles.Count} file(s) -> {destPath}");
+            }
+
             var project = new ManagedProject(_config.Product.Name, entities.ToArray());
 
             if (_config.Product.Platform.Equals("x64", StringComparison.OrdinalIgnoreCase))
@@ -600,6 +652,20 @@ namespace AlliePack
                 Console.WriteLine("Environment Variables:");
                 foreach (var ev in _config.Environment)
                     Console.WriteLine($"  [{ev.Scope}] {ev.Name} = {ev.Value}");
+            }
+
+            if (_config.Groups.Any())
+            {
+                Console.WriteLine("File Groups (outside INSTALLDIR):");
+                foreach (var group in _config.Groups)
+                {
+                    string dest = _config.Directories
+                        .FirstOrDefault(d => d.Id.Equals(group.DestinationDir, StringComparison.OrdinalIgnoreCase))
+                        ?.Path ?? group.DestinationDir;
+                    Console.WriteLine($"  [{group.Id}] -> {dest}");
+                    foreach (var item in group.Files)
+                        Console.WriteLine($"    {item.Source}{(item.Rename != null ? $" (as {item.Rename})" : "")}");
+                }
             }
         }
 

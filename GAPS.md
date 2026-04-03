@@ -10,7 +10,7 @@ phase is implemented.
 | ID | Description | Roadmap Phase | Status | Surfaced By |
 |---|---|---|---|---|
 | GAP-1 | Recursive directory source (`**` glob) | Phase 3 | Open | gms help/book tree |
-| GAP-2 | Named directories + file groups (files outside INSTALLDIR) | Phase 3 | Open | gms PS module, config dir |
+| GAP-2 | Named directories + file groups (files outside INSTALLDIR) | Phase 3 | **Closed** | gms PS module, config dir |
 | GAP-3 | Environment variables (`environment:` block) | Phase 1 | **Closed** | gms GMS_HOME |
 | GAP-4 | Conditional file install (`condition: notExists`) | Phase 3 | Open | gms default config |
 | GAP-5 | Release flags + scope-variant paths (PerUser/PerMachine) | Phase 4 | Open | gms install scope |

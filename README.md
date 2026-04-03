@@ -163,6 +163,34 @@ shortcuts:
 | `[ProgramMenuFolder]` | Start Menu\Programs |
 | `[Desktop]` or `[DesktopFolder]` | Desktop |
 
+### `directories` and `groups`
+
+`directories` defines named locations outside `INSTALLDIR`. `groups` installs files to those locations.
+
+```yaml
+directories:
+  - id: PSMODDIR
+    path: "[PersonalFolder]\\WindowsPowerShell\\Modules\\MyApp"
+
+  - id: CONFIGDIR
+    path: "[AppDataFolder]\\MyCompany\\MyApp"
+
+groups:
+  - id: PsModule
+    destinationDir: PSMODDIR
+    files:
+      - source: "scripts:MyApp.psm1"
+      - source: "scripts:MyApp.psd1"
+
+  - id: DefaultConfig
+    destinationDir: CONFIGDIR
+    files:
+      - source: "installer/myapp.config.ini"
+        rename: "config.ini"
+```
+
+Standard WiX folder properties are supported as path roots: `[PersonalFolder]`, `[AppDataFolder]`, `[CommonAppDataFolder]`, `[LocalAppDataFolder]`, `[ProgramFiles]`, etc.
+
 ### `environment`
 
 Set user or machine environment variables during installation. Variables are removed on uninstall.
@@ -203,6 +231,7 @@ src/AlliePack/
 - [x] x64 / arm64 platform support
 - [ ] Registry keys and values
 - [x] Environment variables
+- [x] Named directories and file groups (install outside INSTALLDIR)
 - [ ] Optional installer features (component selection)
 - [ ] Release flags and conditional inclusion (multi-client configs)
 - [ ] Modular YAML includes

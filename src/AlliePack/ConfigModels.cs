@@ -20,6 +20,12 @@ namespace AlliePack
 
         [YamlMember(Alias = "environment")]
         public List<EnvVarConfig> Environment { get; set; } = new();
+
+        [YamlMember(Alias = "directories")]
+        public List<DirectoryConfig> Directories { get; set; } = new();
+
+        [YamlMember(Alias = "groups")]
+        public List<FileGroupConfig> Groups { get; set; } = new();
     }
 
     public class ShortcutInfo
@@ -59,6 +65,36 @@ namespace AlliePack
 
         [YamlMember(Alias = "scope")]
         public string Scope { get; set; } = "user"; // user or machine
+    }
+
+    public class DirectoryConfig
+    {
+        [YamlMember(Alias = "id")]
+        public string Id { get; set; } = string.Empty;
+
+        [YamlMember(Alias = "path")]
+        public string Path { get; set; } = string.Empty;
+    }
+
+    public class FileGroupItem
+    {
+        [YamlMember(Alias = "source")]
+        public string Source { get; set; } = string.Empty;
+
+        [YamlMember(Alias = "rename")]
+        public string? Rename { get; set; }
+    }
+
+    public class FileGroupConfig
+    {
+        [YamlMember(Alias = "id")]
+        public string Id { get; set; } = string.Empty;
+
+        [YamlMember(Alias = "destinationDir")]
+        public string DestinationDir { get; set; } = string.Empty;
+
+        [YamlMember(Alias = "files")]
+        public List<FileGroupItem> Files { get; set; } = new();
     }
 
     public class StructureElement
