@@ -20,14 +20,21 @@ namespace AlliePack
         {
             try
             {
-                if (!File.Exists(options.ConfigPath))
+                // Resolve config path: directory -> allie-pack.yaml, empty -> cwd/allie-pack.yaml
+                string configPath = options.ConfigPath;
+                if (string.IsNullOrEmpty(configPath))
+                    configPath = Path.Combine(Directory.GetCurrentDirectory(), "allie-pack.yaml");
+                else if (Directory.Exists(configPath))
+                    configPath = Path.Combine(configPath, "allie-pack.yaml");
+
+                if (!File.Exists(configPath))
                 {
-                    Console.WriteLine($"Error: Configuration file not found at {options.ConfigPath}");
+                    Console.WriteLine($"Error: Configuration file not found at {configPath}");
                     return;
                 }
 
-                Console.WriteLine($"Reading config: {options.ConfigPath}...");
-                string yaml = File.ReadAllText(options.ConfigPath);
+                Console.WriteLine($"Reading config: {configPath}...");
+                string yaml = File.ReadAllText(configPath);
 
                 // Apply --define substitutions to raw YAML before parsing.
                 // Replaces [KEY] with VALUE everywhere in the file, including
@@ -50,7 +57,7 @@ namespace AlliePack
 
                 var config = deserializer.Deserialize<AlliePackConfig>(yaml);
 
-                var resolver = new PathResolver(options.ConfigPath, config.Aliases);
+                var resolver = new PathResolver(configPath, config.Aliases);
                 var solutionResolver = new SolutionResolver(resolver);
                 var builder = new InstallerBuilder(config, resolver, solutionResolver, options);
 

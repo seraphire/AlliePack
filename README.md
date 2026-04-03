@@ -26,10 +26,12 @@ AlliePack is a YAML-driven MSI installer builder built on **WixSharp** and **WiX
 ## Usage
 
 ```
-AlliePack.exe <config>  [options]
+AlliePack.exe [config]  [options]
 
 Arguments:
-  config                    Path to the allie-pack.yaml configuration file
+  config                    Path to a config file, or a directory containing
+                            allie-pack.yaml. Omit to use allie-pack.yaml in
+                            the current directory.
 
 Options:
   -r, --report              Preview resolved files without building the MSI
@@ -53,6 +55,15 @@ AlliePack.exe allie-pack.yaml -D VERSION=2.1.0 -D BUILD=42
 # Write MSI to a specific location
 AlliePack.exe allie-pack.yaml --output C:\builds\MyApp-2.1.0.msi
 ```
+
+## Config File Naming
+
+| Scenario | Filename |
+|---|---|
+| Default file in a project directory | `allie-pack.yaml` |
+| Named/project-specific config | `<project>.allie.yaml` (e.g., `myapp.allie.yaml`) |
+
+When no config argument is given, AlliePack looks for `allie-pack.yaml` in the current directory. Passing a directory path does the same. Named configs must be referenced explicitly.
 
 ## Configuration Reference
 

@@ -5,7 +5,9 @@ namespace AlliePack
 {
     public class Options
     {
-        [Value(0, MetaName = "config", Required = true, HelpText = "Path to the allie-pack.yaml configuration file.")]
+        [Value(0, MetaName = "config", Required = false,
+            HelpText = "Path to a config file, or a directory to search for allie-pack.yaml. " +
+                       "Defaults to allie-pack.yaml in the current directory.")]
         public string ConfigPath { get; set; } = string.Empty;
 
         [Option('r', "report", Required = false, HelpText = "Generate a report of resolved files instead of building the MSI.")]
