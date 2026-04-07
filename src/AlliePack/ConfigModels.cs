@@ -107,6 +107,9 @@ namespace AlliePack
         [YamlMember(Alias = "groups")]
         public List<FileGroupConfig> Groups { get; set; } = new();
 
+        [YamlMember(Alias = "registry")]
+        public List<RegistryConfig> Registry { get; set; } = new();
+
         // Raw WiX XML escape hatch
         [YamlMember(Alias = "wix")]
         public WixConfig? Wix { get; set; }
@@ -252,6 +255,42 @@ namespace AlliePack
         // Path to a .wxs file; resolved via aliases and tokens
         [YamlMember(Alias = "file")]
         public string? File { get; set; }
+    }
+
+    // -----------------------------------------------------------------------
+    // Registry values
+    // -----------------------------------------------------------------------
+
+    public class RegistryConfig
+    {
+        // Hive: HKLM, HKCU, HKCR, HKU
+        // Aliases: LocalMachine, CurrentUser, ClassesRoot, Users
+        [YamlMember(Alias = "root")]
+        public string Root { get; set; } = "HKLM";
+
+        // Registry key path under the hive, e.g. "Software\\MyCompany\\MyApp"
+        [YamlMember(Alias = "key")]
+        public string Key { get; set; } = string.Empty;
+
+        // Value name.  Empty string or omitted = default value.
+        [YamlMember(Alias = "name")]
+        public string Name { get; set; } = string.Empty;
+
+        // Value data.  Supports [INSTALLDIR] and other WiX properties.
+        // Also accepts a conditional map for scope-variant values.
+        [YamlMember(Alias = "value")]
+        public ConditionalString Value { get; set; } = new ConditionalString(string.Empty);
+
+        // Value type: string (default), expandString, multiString, dword, qword, binary
+        [YamlMember(Alias = "type")]
+        public string Type { get; set; } = "string";
+
+        // Registry bitness override.
+        // null (omitted) = use the installer platform (x64 installer -> 64-bit view, x86 -> 32-bit view).
+        // true  = always write to the 64-bit registry view.
+        // false = always write to the 32-bit/WOW64 view (useful for 32-bit COM registrations in x64 installers).
+        [YamlMember(Alias = "win64")]
+        public bool? Win64 { get; set; }
     }
 
     // -----------------------------------------------------------------------

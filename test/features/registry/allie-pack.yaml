@@ -1,0 +1,51 @@
+product:
+  name: "RegistryTest"
+  manufacturer: "AlliePack"
+  version: "1.0.0.0"
+  upgradeCode: "a1b2c3d4-0001-0002-0003-000000000001"
+  platform: "x64"
+  installScope: perMachine
+
+aliases:
+  bin: "."
+
+structure:
+  - source: "bin:app.exe"
+
+registry:
+  # String value -- install path written to HKLM (64-bit view, matches x64 platform)
+  - root: HKLM
+    key: "Software\\AlliePack\\RegistryTest"
+    name: "InstallPath"
+    value: "[INSTALLDIR]"
+    type: string
+
+  # DWORD version stamp
+  - root: HKLM
+    key: "Software\\AlliePack\\RegistryTest"
+    name: "MajorVersion"
+    value: "1"
+    type: dword
+
+  # Expandable string (REG_EXPAND_SZ) -- environment variable reference
+  - root: HKLM
+    key: "Software\\AlliePack\\RegistryTest"
+    name: "LogPath"
+    value: "%TEMP%\\RegistryTest.log"
+    type: expandString
+
+  # HKCU value -- user preference
+  - root: HKCU
+    key: "Software\\AlliePack\\RegistryTest"
+    name: "FirstRun"
+    value: "1"
+    type: dword
+
+  # Force 32-bit registry view even though installer is x64
+  # (useful for COM registrations or 32-bit app interop)
+  - root: HKLM
+    key: "Software\\AlliePack\\RegistryTest"
+    name: "LegacyCompat"
+    value: "enabled"
+    type: string
+    win64: false

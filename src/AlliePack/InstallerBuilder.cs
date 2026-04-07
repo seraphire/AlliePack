@@ -93,7 +93,9 @@ namespace AlliePack
 
             if (!installPath.Contains("[") && !Path.IsPathRooted(installPath))
             {
-                installPath = Path.Combine("[ProgramFilesFolder]", installPath);
+                // Use the platform-appropriate Program Files folder as the default root.
+                string defaultPf = is64 ? "[ProgramFiles64Folder]" : "[ProgramFilesFolder]";
+                installPath = Path.Combine(defaultPf, installPath);
             }
             
             Dir? rootDir = null;
@@ -160,6 +162,38 @@ namespace AlliePack
                 targetDir.GenericItems = (targetDir.GenericItems ?? new IGenericEntity[0])
                     .Concat(new IGenericEntity[] { envVar })
                     .ToArray();
+            }
+
+            // Registry values
+            foreach (var reg in _config.Registry)
+            {
+                // Resolve [INSTALLDIR] and WiX properties in the value string.
+                // WiX expands these at install time; we preserve any unresolved [Property]
+                // tokens so they pass through to the generated XML intact.
+                string rawValue = reg.Value.Resolve(_activeFlags);
+                rawValue = rawValue.Replace("[INSTALLDIR]", "[INSTALLDIR]"); // passthrough -- WiX expands at runtime
+                object typedValue = ParseRegistryValueData(rawValue, reg.Type);
+
+                // Win64: per-entry override > platform default.
+                // true  = write to 64-bit registry view (HKLM\SOFTWARE\...)
+                // false = write to 32-bit/WOW64 view (HKLM\SOFTWARE\WOW6432Node\...)
+                bool regWin64 = reg.Win64 ?? is64;
+
+                var regValue = new RegValue(
+                    ParseRegistryHive(reg.Root),
+                    reg.Key,
+                    reg.Name,
+                    typedValue)
+                {
+                    Win64 = regWin64
+                };
+
+                // For types WixSharp can't infer from the CLR object alone, set explicitly.
+                string? wixType = MapRegistryTypeName(reg.Type);
+                if (wixType != null)
+                    regValue.Type = wixType;
+
+                entities.Add(regValue);
             }
 
             entities.Add(rootDir);
@@ -296,7 +330,9 @@ namespace AlliePack
             project.AttributesDefinition = isMachine ? "Scope=perMachine" : "Scope=perUser";
 
             // Suppress "Ambiguous short name" warning as we are explicitly generating them
-            project.WixOptions = "-sw1044";
+            // -sw1044: suppress "Ambiguous short name" (AlliePack generates explicit short names)
+            // -sw5437: suppress "no longer necessary to define standard directory" (WiX 6 advisory, WixSharp emits these)
+            project.WixOptions = "-sw1044 -sw5437";
 
             // Configure installer UI. Always use ManagedUI for a consistent look;
             // include the licence dialog only when a license file is supplied.
@@ -655,6 +691,86 @@ namespace AlliePack
         }
 
         // -----------------------------------------------------------------------
+        // Registry helpers
+        // -----------------------------------------------------------------------
+
+        private static RegistryHive ParseRegistryHive(string root)
+        {
+            switch (root.ToUpperInvariant())
+            {
+                case "HKLM":
+                case "HKEY_LOCAL_MACHINE":
+                case "LOCALMACHINE":
+                    return RegistryHive.LocalMachine;
+                case "HKCU":
+                case "HKEY_CURRENT_USER":
+                case "CURRENTUSER":
+                    return RegistryHive.CurrentUser;
+                case "HKCR":
+                case "HKEY_CLASSES_ROOT":
+                case "CLASSESROOT":
+                    return RegistryHive.ClassesRoot;
+                case "HKU":
+                case "HKEY_USERS":
+                case "USERS":
+                    return RegistryHive.Users;
+                default:
+                    Console.WriteLine($"Warning: Unknown registry hive '{root}', defaulting to HKLM");
+                    return RegistryHive.LocalMachine;
+            }
+        }
+
+        /// <summary>
+        /// Converts the YAML string value to the correct CLR type for WixSharp:
+        /// dword -> int, qword -> long, everything else -> string.
+        /// </summary>
+        private static object ParseRegistryValueData(string value, string type)
+        {
+            switch (type.ToLowerInvariant())
+            {
+                case "dword":
+                    // Accept decimal or 0x hex
+                    if (value.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+                        return Convert.ToInt32(value.Substring(2), 16);
+                    if (int.TryParse(value, out int i))
+                        return i;
+                    Console.WriteLine($"Warning: dword value '{value}' could not be parsed, using 0");
+                    return 0;
+
+                case "qword":
+                    if (value.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+                        return Convert.ToInt64(value.Substring(2), 16);
+                    if (long.TryParse(value, out long l))
+                        return l;
+                    Console.WriteLine($"Warning: qword value '{value}' could not be parsed, using 0");
+                    return 0L;
+
+                default:
+                    // string, expandString, multiString, binary -- pass as string;
+                    // WixSharp Type property handles the distinction.
+                    return value;
+            }
+        }
+
+        /// <summary>
+        /// Returns the WixSharp Type string to set on a RegValue, or null when
+        /// WixSharp can infer the correct type from the CLR value alone.
+        /// </summary>
+        private static string? MapRegistryTypeName(string yamlType)
+        {
+            switch (yamlType.ToLowerInvariant())
+            {
+                case "string":        return null;            // WixSharp infers "string" from string CLR type
+                case "dword":         return null;            // WixSharp infers "integer" from int CLR type
+                case "qword":         return "integer";       // WixSharp may not handle long; force "integer"
+                case "expandstring":  return "expandable";
+                case "multistring":   return "multiString";
+                case "binary":        return "binary";
+                default:              return null;
+            }
+        }
+
+        // -----------------------------------------------------------------------
         // Scope helpers
         // -----------------------------------------------------------------------
 
@@ -867,6 +983,22 @@ namespace AlliePack
                         Console.WriteLine($"  [file]   {f.File}");
                     else if (!string.IsNullOrWhiteSpace(f.Inline))
                         Console.WriteLine($"  [inline] {f.Inline.Trim().Split('\n')[0].Trim()}...");
+                }
+            }
+
+            if (_config.Registry.Any())
+            {
+                bool platformWin64 = _config.Product.Platform.Equals("x64", StringComparison.OrdinalIgnoreCase)
+                    || _config.Product.Platform.Equals("arm64", StringComparison.OrdinalIgnoreCase);
+                Console.WriteLine("Registry Values:");
+                foreach (var reg in _config.Registry)
+                {
+                    bool effectiveWin64 = reg.Win64 ?? platformWin64;
+                    string bitNote = reg.Win64.HasValue ? $" [win64={reg.Win64.Value}]" : string.Empty;
+                    string val = reg.Value.Resolve(_activeFlags);
+                    Console.WriteLine($"  [{reg.Root}\\{reg.Key}]{bitNote}");
+                    string displayName = string.IsNullOrEmpty(reg.Name) ? "(Default)" : reg.Name;
+                    Console.WriteLine($"    {displayName} ({reg.Type}) = {val}");
                 }
             }
 
