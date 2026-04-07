@@ -13,6 +13,7 @@ WiX extension inventory. Items marked **[Roadmap]** are already documented in RO
 | MSIX packages | Modern AppX-style packaging; WiX 6 + FireGiant MSIX extension |
 | MSIX bundles | Multi-arch MSIX bundle (`.msixbundle`) |
 | MSI-to-MSIX conversion | Convert existing MSI to MSIX; InstallShield advertises this prominently |
+| Windows Store publishing | Submit MSIX to the Microsoft Store via Partner Center or `winappdeploytool`; distinct from winget (winget = unmanaged sideload, Store = managed/signed distribution) |
 | MST transform creation | Build `.mst` customisation transforms from a config delta |
 | Merge modules (.msm) | Create reusable component packages; WiX `Module` element |
 | Suite/Bundle installer **[Roadmap]** | Bootstrapper that chains prereqs + main MSI; WiX Burn (`Bundle`) |
@@ -83,7 +84,8 @@ WiX extension inventory. Items marked **[Roadmap]** are already documented in RO
 
 | Gap | Notes |
 |---|---|
-| COM class registration | Register `.dll` COM servers in HKCR; WiX `Class`, `ProgId`, `Interface` elements |
+| COM registration extraction | Inspect an existing `.dll`, `.ocx`, or `.tlb` and automatically generate the `Class`/`ProgId`/`TypeLib`/`Interface` WiX entries from it -- equivalent to InstallShield's "COM extraction" or `heat.exe`/`wix harvest` scanning. **Priority for GM**: essential for legacy VB6/COM installers where registration was captured manually or via `regsvr32`. |
+| COM class registration | Manually declare COM servers in HKCR; WiX `Class`, `ProgId`, `Interface` elements |
 | COM+ applications | Deploy COM+ components and applications; WiX ComPlus extension |
 | Type library registration | Register `.tlb` files; WiX `TypeLib` element |
 | COM self-registration | Fallback `regsvr32`-style registration; WiX `File/@SelfRegCost` |
@@ -234,7 +236,9 @@ WiX extensions, and would cover real-world use cases that users currently work a
 | Medium | File association (ext/verb) | WiX core schema |
 | Medium | AppSearch / launch conditions | WiX core schema |
 | Medium | INI file editing | WiX core schema |
-| Low | COM class/ProgId/TypeLib registration | WiX core schema |
+| Medium | COM registration extraction (DLL/OCX/TLB harvest) | `wix harvest` / custom tool; **GM priority for legacy VB6** |
+| Medium | COM class/ProgId/TypeLib/Interface declaration | WiX core schema |
+| Medium | Windows Store publishing | MSIX + Partner Center / `winappdeploytool` |
 | Low | ODBC data sources | WiX core schema |
 | Low | MSP patch creation | WiX core schema (`Patch`) |
 | Low | Device drivers (DIFx) | `WixToolset.Difx.wixext` |
