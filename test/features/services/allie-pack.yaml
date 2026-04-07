@@ -1,0 +1,47 @@
+product:
+  name: "ServicesTest"
+  manufacturer: "AlliePack"
+  version: "1.0.0.0"
+  upgradeCode: "a1b2c3d4-0001-0002-0003-000000000002"
+  platform: "x64"
+  installScope: perMachine
+
+aliases:
+  bin: "."
+
+structure:
+  - source: "bin:myservice.exe"
+  - source: "bin:myapp.exe"
+
+services:
+  # Minimal service -- only required fields, all defaults apply.
+  # Starts automatically, runs as LocalSystem, restarts on failure.
+  - name: "AllieSvc"
+    displayName: "AlliePack Test Service"
+    description: "Minimal service demonstrating AlliePack service installation"
+    executable: "[INSTALLDIR]\\myservice.exe"
+    start: auto
+    account: LocalSystem
+
+  # Full-featured service -- demonstrates every supported field.
+  - name: "AllieWorker"
+    displayName: "AlliePack Worker Service"
+    description: "Background worker with restart-on-failure and dependencies"
+    executable: "[INSTALLDIR]\\myapp.exe"
+    arguments: "--worker --config [INSTALLDIR]\\worker.ini"
+    start: auto
+    delayedAutoStart: true
+    account: LocalService
+    type: ownProcess
+    errorControl: normal
+
+    onFailure:
+      first: restart
+      second: restart
+      third: none
+      resetAfterDays: 1
+      restartDelaySeconds: 30
+
+    dependsOn:
+      - EventLog
+      - RPCSS

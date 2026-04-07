@@ -30,7 +30,8 @@ namespace AlliePack
 
         public void Build()
         {
-            WixExtension.UI.PreferredVersion = "6.0.2";
+            WixExtension.UI.PreferredVersion   = "6.0.2";
+            WixExtension.Util.PreferredVersion = "6.0.2";
             var allFiles = new List<ResolvedFile>();
             foreach (var element in _config.Structure)
             {
@@ -254,6 +255,69 @@ namespace AlliePack
                 {
                     Console.WriteLine($"Warning: Shortcut target not found: {s.Target} (Resolved to: {targetPath})");
                 }
+            }
+
+            // Windows Services
+            foreach (var svc in _config.Services)
+            {
+                string execPath = ResolvePath(svc.Executable, installPath);
+                if (!fileMap.TryGetValue(execPath, out var svcFile))
+                {
+                    Console.WriteLine($"Warning: Service '{svc.Name}': executable not found in install tree: {svc.Executable}");
+                    Console.WriteLine($"         (Resolved to: {execPath})");
+                    Console.WriteLine($"         Ensure the executable is declared in structure: before services:");
+                    continue;
+                }
+
+                var si = new ServiceInstaller
+                {
+                    Name        = svc.Name,
+                    DisplayName = svc.DisplayName ?? svc.Name,
+                    Description = svc.Description ?? string.Empty,
+                    Account     = svc.Account,
+                    Start       = ParseSvcStartType(svc.Start),
+                    Type        = ParseSvcType(svc.Type),
+                    ErrorControl = ParseSvcErrorControl(svc.ErrorControl),
+                    // Sensible lifecycle defaults: start when installed,
+                    // stop before any file replacement and on uninstall,
+                    // remove completely on uninstall.
+                    StartOn  = SvcEvent.Install,
+                    StopOn   = SvcEvent.InstallUninstall_Wait,
+                    RemoveOn = SvcEvent.Uninstall_Wait,
+                };
+
+                if (!string.IsNullOrEmpty(svc.Arguments))
+                    si.Arguments = svc.Arguments;
+
+                if (!string.IsNullOrEmpty(svc.Password))
+                    si.Password = svc.Password;
+
+                if (svc.Interactive.HasValue)
+                    si.Interactive = svc.Interactive;
+
+                if (svc.DelayedAutoStart.HasValue)
+                    si.DelayedAutoStart = svc.DelayedAutoStart;
+
+                if (svc.OnFailure != null)
+                {
+                    si.FirstFailureActionType  = ParseFailureAction(svc.OnFailure.First);
+                    si.SecondFailureActionType = ParseFailureAction(svc.OnFailure.Second);
+                    si.ThirdFailureActionType  = ParseFailureAction(svc.OnFailure.Third);
+                    if (svc.OnFailure.ResetAfterDays.HasValue)
+                        si.ResetPeriodInDays = svc.OnFailure.ResetAfterDays;
+                    if (svc.OnFailure.RestartDelaySeconds.HasValue)
+                        si.RestartServiceDelayInSeconds = svc.OnFailure.RestartDelaySeconds;
+                }
+
+                if (svc.DependsOn.Any())
+                    si.DependsOn = svc.DependsOn.Select(d => new ServiceDependency(d)).ToArray();
+
+                svcFile.ServiceInstallers = (svcFile.ServiceInstallers ?? new IGenericEntity[0])
+                    .Concat(new IGenericEntity[] { si })
+                    .ToArray();
+
+                if (_options.Verbose)
+                    Console.WriteLine($"Service '{svc.Name}' -> {svc.Executable}");
             }
 
             // Named directory groups -- files installed outside INSTALLDIR
@@ -691,6 +755,68 @@ namespace AlliePack
         }
 
         // -----------------------------------------------------------------------
+        // Service helpers
+        // -----------------------------------------------------------------------
+
+        private static SvcStartType ParseSvcStartType(string s)
+        {
+            switch (s.ToLowerInvariant())
+            {
+                case "auto":     return SvcStartType.auto;
+                case "demand":
+                case "manual":   return SvcStartType.demand;
+                case "disabled": return SvcStartType.disabled;
+                case "boot":     return SvcStartType.boot;
+                case "system":   return SvcStartType.system;
+                default:
+                    Console.WriteLine($"Warning: Unknown service start type '{s}', using 'auto'");
+                    return SvcStartType.auto;
+            }
+        }
+
+        private static SvcType ParseSvcType(string s)
+        {
+            switch (s.ToLowerInvariant())
+            {
+                case "ownprocess":
+                case "own":      return SvcType.ownProcess;
+                case "shareprocess":
+                case "share":    return SvcType.shareProcess;
+                default:
+                    Console.WriteLine($"Warning: Unknown service type '{s}', using 'ownProcess'");
+                    return SvcType.ownProcess;
+            }
+        }
+
+        private static SvcErrorControl ParseSvcErrorControl(string s)
+        {
+            switch (s.ToLowerInvariant())
+            {
+                case "ignore":   return SvcErrorControl.ignore;
+                case "normal":   return SvcErrorControl.normal;
+                case "critical": return SvcErrorControl.critical;
+                default:
+                    Console.WriteLine($"Warning: Unknown service errorControl '{s}', using 'normal'");
+                    return SvcErrorControl.normal;
+            }
+        }
+
+        private static FailureActionType ParseFailureAction(string s)
+        {
+            switch (s.ToLowerInvariant())
+            {
+                case "none":       return FailureActionType.none;
+                case "restart":    return FailureActionType.restart;
+                case "reboot":     return FailureActionType.reboot;
+                case "runcommand":
+                case "run":        return FailureActionType.runCommand;
+                default:
+                    Console.WriteLine($"Warning: Unknown failure action '{s}', using 'none'");
+                    return FailureActionType.none;
+            }
+        }
+
+        // -----------------------------------------------------------------------
         // Registry helpers
         // -----------------------------------------------------------------------
 
@@ -983,6 +1109,23 @@ namespace AlliePack
                         Console.WriteLine($"  [file]   {f.File}");
                     else if (!string.IsNullOrWhiteSpace(f.Inline))
                         Console.WriteLine($"  [inline] {f.Inline.Trim().Split('\n')[0].Trim()}...");
+                }
+            }
+
+            if (_config.Services.Any())
+            {
+                Console.WriteLine("Windows Services:");
+                foreach (var svc in _config.Services)
+                {
+                    string startLabel = svc.Start.ToLowerInvariant() == "auto" && svc.DelayedAutoStart == true
+                        ? "auto (delayed)"
+                        : svc.Start;
+                    Console.WriteLine($"  [{svc.Name}]  start={startLabel}  account={svc.Account}");
+                    Console.WriteLine($"    executable: {svc.Executable}");
+                    if (svc.OnFailure != null)
+                        Console.WriteLine($"    on failure: {svc.OnFailure.First} / {svc.OnFailure.Second} / {svc.OnFailure.Third}");
+                    if (svc.DependsOn.Any())
+                        Console.WriteLine($"    depends on: {string.Join(", ", svc.DependsOn)}");
                 }
             }
 

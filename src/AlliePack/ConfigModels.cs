@@ -110,6 +110,9 @@ namespace AlliePack
         [YamlMember(Alias = "registry")]
         public List<RegistryConfig> Registry { get; set; } = new();
 
+        [YamlMember(Alias = "services")]
+        public List<ServiceConfig> Services { get; set; } = new();
+
         // Raw WiX XML escape hatch
         [YamlMember(Alias = "wix")]
         public WixConfig? Wix { get; set; }
@@ -291,6 +294,93 @@ namespace AlliePack
         // false = always write to the 32-bit/WOW64 view (useful for 32-bit COM registrations in x64 installers).
         [YamlMember(Alias = "win64")]
         public bool? Win64 { get; set; }
+    }
+
+    // -----------------------------------------------------------------------
+    // Windows Services
+    // -----------------------------------------------------------------------
+
+    public class ServiceConfig
+    {
+        // Internal service name used by the SCM (sc.exe, Get-Service).  Must be unique.
+        [YamlMember(Alias = "name")]
+        public string Name { get; set; } = string.Empty;
+
+        // Human-readable name shown in the Services panel.  Defaults to name.
+        [YamlMember(Alias = "displayName")]
+        public string? DisplayName { get; set; }
+
+        [YamlMember(Alias = "description")]
+        public string? Description { get; set; }
+
+        // Path to the service executable as it will appear after install.
+        // Supports [INSTALLDIR] and other WiX properties.
+        // Example: "[INSTALLDIR]\\myservice.exe"
+        [YamlMember(Alias = "executable")]
+        public string Executable { get; set; } = string.Empty;
+
+        // Optional command-line arguments passed to the service executable.
+        [YamlMember(Alias = "arguments")]
+        public string? Arguments { get; set; }
+
+        // Service logon account.
+        // Well-known values: LocalSystem (default), LocalService, NetworkService.
+        // Domain accounts: "DOMAIN\\username" (requires password:).
+        [YamlMember(Alias = "account")]
+        public string Account { get; set; } = "LocalSystem";
+
+        // Password for domain accounts.  Omit for well-known accounts.
+        [YamlMember(Alias = "password")]
+        public string? Password { get; set; }
+
+        // Startup type: auto | demand | disabled | boot | system.  Default: auto.
+        [YamlMember(Alias = "start")]
+        public string Start { get; set; } = "auto";
+
+        // Service type: ownProcess (default) | shareProcess.
+        [YamlMember(Alias = "type")]
+        public string Type { get; set; } = "ownProcess";
+
+        // Error control: ignore | normal (default) | critical.
+        [YamlMember(Alias = "errorControl")]
+        public string ErrorControl { get; set; } = "normal";
+
+        // Allow service to interact with the desktop (legacy; rarely needed).
+        [YamlMember(Alias = "interactive")]
+        public bool? Interactive { get; set; }
+
+        // Delay startup after boot (Windows Vista+, auto-start services only).
+        [YamlMember(Alias = "delayedAutoStart")]
+        public bool? DelayedAutoStart { get; set; }
+
+        // Failure / recovery actions.
+        [YamlMember(Alias = "onFailure")]
+        public ServiceFailureConfig? OnFailure { get; set; }
+
+        // Service names or group names this service depends on.
+        [YamlMember(Alias = "dependsOn")]
+        public List<string> DependsOn { get; set; } = new();
+    }
+
+    public class ServiceFailureConfig
+    {
+        // Action on 1st / 2nd / 3rd failure: none (default) | restart | reboot | runCommand.
+        [YamlMember(Alias = "first")]
+        public string First { get; set; } = "none";
+
+        [YamlMember(Alias = "second")]
+        public string Second { get; set; } = "none";
+
+        [YamlMember(Alias = "third")]
+        public string Third { get; set; } = "none";
+
+        // Reset the failure count after this many days of successful operation.
+        [YamlMember(Alias = "resetAfterDays")]
+        public int? ResetAfterDays { get; set; }
+
+        // Delay in seconds before restarting the service after a failure.
+        [YamlMember(Alias = "restartDelaySeconds")]
+        public int? RestartDelaySeconds { get; set; }
     }
 
     // -----------------------------------------------------------------------
