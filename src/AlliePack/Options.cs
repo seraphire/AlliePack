@@ -30,5 +30,11 @@ namespace AlliePack
                        "Falls back to defaultActiveFlags in the config, then to unconditional values. " +
                        "Example: --flag PerUser  or  --flag PerMachine")]
         public IEnumerable<string> Flags { get; set; } = new List<string>();
+
+        [Option("scope", Required = false,
+            HelpText = "Override the effective installation scope for 'installScope: both' configs. " +
+                       "Values: perUser, perMachine.  " +
+                       "Ignored when installScope is perUser or perMachine.")]
+        public string? Scope { get; set; }
     }
 }

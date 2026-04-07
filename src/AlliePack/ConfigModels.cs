@@ -158,9 +158,11 @@ namespace AlliePack
         [YamlMember(Alias = "value")]
         public ConditionalString Value { get; set; } = new ConditionalString(string.Empty);
 
-        // GAP-5: supports conditional map (user/machine)
+        // GAP-5: supports conditional map (user/machine).
+        // Nullable so we can detect when it was not set in YAML, allowing
+        // installScope: both to supply a smart default.
         [YamlMember(Alias = "scope")]
-        public ConditionalString Scope { get; set; } = new ConditionalString("user");
+        public ConditionalString? Scope { get; set; }
     }
 
     // -----------------------------------------------------------------------
@@ -172,9 +174,21 @@ namespace AlliePack
         [YamlMember(Alias = "id")]
         public string Id { get; set; } = string.Empty;
 
-        // GAP-5: supports conditional map
+        // GAP-5: supports conditional map.
+        // Ignored when Type is set.
         [YamlMember(Alias = "path")]
         public ConditionalString Path { get; set; } = new ConditionalString(string.Empty);
+
+        // Well-known location shorthand: config, localdata, psmodules51, psmodules7,
+        // desktop, startmenu, startup.
+        // When set, Path is ignored and the base is resolved from the well-known type
+        // table using the effective install scope.
+        [YamlMember(Alias = "type")]
+        public string? Type { get; set; }
+
+        // Appended to the resolved type base.  Required when Type is set.
+        [YamlMember(Alias = "subPath")]
+        public string? SubPath { get; set; }
     }
 
     // -----------------------------------------------------------------------

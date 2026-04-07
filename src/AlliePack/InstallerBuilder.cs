@@ -41,8 +41,33 @@ namespace AlliePack
             var uniqueFiles = DeduplicateFiles(allFiles);
 
             var entities = new List<WixEntity>();
-            string installPath = _config.Product.InstallDir?.Resolve(_activeFlags)
-                                 ?? (_config.Product.Manufacturer + "\\" + _config.Product.Name);
+
+            // --- Scope resolution ---
+            // rawInstallScope: what the config says (perUser, perMachine, both)
+            // effectiveScope:  the actual MSI scope to build (perUser or perMachine)
+            string rawInstallScope = _config.Product.InstallScope.Resolve(_activeFlags);
+            string effectiveScope  = ComputeEffectiveScope(rawInstallScope);
+            bool isMachine = effectiveScope.Equals("perMachine", StringComparison.OrdinalIgnoreCase);
+
+            // --- installDir resolution ---
+            // Explicit installDir wins.  For 'both' with no explicit dir, apply smart defaults.
+            string resolvedInstallDir = _config.Product.InstallDir?.Resolve(_activeFlags) ?? string.Empty;
+            string installPath;
+            if (!string.IsNullOrEmpty(resolvedInstallDir))
+            {
+                installPath = resolvedInstallDir;
+            }
+            else if (rawInstallScope.Equals("both", StringComparison.OrdinalIgnoreCase))
+            {
+                installPath = isMachine
+                    ? $"[ProgramFiles64Folder]\\{_config.Product.Manufacturer}\\{_config.Product.Name}"
+                    : $"[LocalAppDataFolder]\\Programs\\{_config.Product.Manufacturer}\\{_config.Product.Name}";
+            }
+            else
+            {
+                installPath = _config.Product.Manufacturer + "\\" + _config.Product.Name;
+            }
+
             installPath = installPath.Replace('/', '\\');
             
             bool is64 = _config.Product.Platform.Equals("x64", StringComparison.OrdinalIgnoreCase) || 
@@ -115,7 +140,16 @@ namespace AlliePack
             // are installed/removed with the product.
             foreach (var ev in _config.Environment)
             {
-                string evScope = ev.Scope.Resolve(_activeFlags);
+                // Scope: explicit value wins; null (not set in YAML) defers to effective scope
+                // when installScope is 'both', or falls back to 'user'.
+                string evScope;
+                if (ev.Scope != null)
+                    evScope = ev.Scope.Resolve(_activeFlags);
+                else if (rawInstallScope.Equals("both", StringComparison.OrdinalIgnoreCase))
+                    evScope = isMachine ? "machine" : "user";
+                else
+                    evScope = "user";
+
                 string evValue = ev.Value.Resolve(_activeFlags);
                 bool isSystem = evScope.Equals("machine", StringComparison.OrdinalIgnoreCase);
                 var envVar = new EnvironmentVariable(ev.Name, evValue)
@@ -138,33 +172,41 @@ namespace AlliePack
                 string targetPath = ResolvePath(s.Target, installPath);
                 if (fileMap.TryGetValue(targetPath, out var wixFile))
                 {
-                    string folder = ResolveFolder(s.Folder);
-                    
-                    // Ensure the target folder exists as a Dir entity in the project
+                    string folder = ResolveFolder(s.Folder, isMachine);
+
+                    // Ensure the target folder exists as a Dir entity in the project.
+                    // Handles both %ProgramMenu% WixSharp keywords and [WixProperty] bracket forms.
+                    string? rootKey = null;
                     if (folder.StartsWith("%"))
                     {
-                        string[] parts = folder.Split(new[] { '\\' }, StringSplitOptions.RemoveEmptyEntries);
-                        if (parts.Length > 0)
-                        {
-                            string rootKey = parts[0]; // e.g., %ProgramMenu%
-                            if (!shortcutRootDirs.TryGetValue(rootKey, out var rootDirEntity))
-                            {
-                                rootDirEntity = new Dir(rootKey);
-                                shortcutRootDirs[rootKey] = rootDirEntity;
-                                entities.Add(rootDirEntity);
-                            }
+                        rootKey = folder.Split(new[] { '\\' }, StringSplitOptions.RemoveEmptyEntries)[0];
+                    }
+                    else if (folder.StartsWith("[") && folder.Contains("]"))
+                    {
+                        int end = folder.IndexOf(']');
+                        rootKey = folder.Substring(0, end + 1);
+                    }
 
-                            Dir current = rootDirEntity;
-                            for (int i = 1; i < parts.Length; i++)
+                    if (rootKey != null)
+                    {
+                        if (!shortcutRootDirs.TryGetValue(rootKey, out var rootDirEntity))
+                        {
+                            rootDirEntity = new Dir(rootKey);
+                            shortcutRootDirs[rootKey] = rootDirEntity;
+                            entities.Add(rootDirEntity);
+                        }
+
+                        Dir current = rootDirEntity;
+                        string[] parts = folder.Split(new[] { '\\' }, StringSplitOptions.RemoveEmptyEntries);
+                        for (int i = 1; i < parts.Length; i++)
+                        {
+                            var existing = current.Dirs.FirstOrDefault(d => d.Name == parts[i]);
+                            if (existing == null)
                             {
-                                var existing = current.Dirs.FirstOrDefault(d => d.Name == parts[i]);
-                                if (existing == null)
-                                {
-                                    existing = new Dir(parts[i]);
-                                    current.Dirs = (current.Dirs ?? new Dir[0]).Concat(new[] { existing }).ToArray();
-                                }
-                                current = existing;
+                                existing = new Dir(parts[i]);
+                                current.Dirs = (current.Dirs ?? new Dir[0]).Concat(new[] { existing }).ToArray();
                             }
+                            current = existing;
                         }
                     }
 
@@ -182,7 +224,7 @@ namespace AlliePack
 
             // Named directory groups -- files installed outside INSTALLDIR
             var namedDirMap = _config.Directories
-                .ToDictionary(d => d.Id, d => d.Path.Resolve(_activeFlags), StringComparer.OrdinalIgnoreCase);
+                .ToDictionary(d => d.Id, d => ResolveDirectoryPath(d, isMachine), StringComparer.OrdinalIgnoreCase);
 
             foreach (var group in _config.Groups)
             {
@@ -251,15 +293,7 @@ namespace AlliePack
             project.Description = _config.Product.Description;
             project.Version = new Version(_config.Product.Version);
 
-            string installScope = _config.Product.InstallScope.Resolve(_activeFlags);
-            if (installScope.Equals("perUser", StringComparison.OrdinalIgnoreCase))
-            {
-                project.AttributesDefinition = "Scope=perUser";
-            }
-            else
-            {
-                project.AttributesDefinition = "Scope=perMachine";
-            }
+            project.AttributesDefinition = isMachine ? "Scope=perMachine" : "Scope=perUser";
 
             // Suppress "Ambiguous short name" warning as we are explicitly generating them
             project.WixOptions = "-sw1044";
@@ -330,6 +364,15 @@ namespace AlliePack
             }
             else
             {
+                if (!string.IsNullOrEmpty(_options.OutputPath))
+                {
+                    // WixSharp uses OutFileName (no extension) + OutDir to control
+                    // the output location.
+                    string outDir  = Path.GetDirectoryName(Path.GetFullPath(_options.OutputPath)) ?? ".";
+                    string outName = Path.GetFileNameWithoutExtension(_options.OutputPath);
+                    project.OutDir      = outDir;
+                    project.OutFileName = outName;
+                }
                 project.BuildMsi();
             }
         }
@@ -611,6 +654,76 @@ namespace AlliePack
             }
         }
 
+        // -----------------------------------------------------------------------
+        // Scope helpers
+        // -----------------------------------------------------------------------
+
+        /// <summary>
+        /// Converts a raw installScope value (perUser / perMachine / both) to the
+        /// effective scope for this build.  'both' defers to --scope, defaulting
+        /// to perUser when no override is supplied.
+        /// </summary>
+        private string ComputeEffectiveScope(string rawInstallScope)
+        {
+            if (!rawInstallScope.Equals("both", StringComparison.OrdinalIgnoreCase))
+                return rawInstallScope;
+
+            if (!string.IsNullOrEmpty(_options.Scope))
+                return _options.Scope.Equals("perMachine", StringComparison.OrdinalIgnoreCase)
+                    ? "perMachine"
+                    : "perUser";
+
+            return "perUser";
+        }
+
+        /// <summary>
+        /// Returns the resolved absolute path for a DirectoryConfig entry.
+        /// When Type is set, the well-known base is resolved against the current
+        /// effective scope; otherwise the Path conditional string is used.
+        /// </summary>
+        private string ResolveDirectoryPath(DirectoryConfig dir, bool isMachine)
+        {
+            if (!string.IsNullOrEmpty(dir.Type))
+            {
+                string basePath = GetWellKnownBase(dir.Type!, isMachine);
+                string sub = dir.SubPath ?? string.Empty;
+                return string.IsNullOrEmpty(sub) ? basePath : basePath + "\\" + sub;
+            }
+            return dir.Path.Resolve(_activeFlags);
+        }
+
+        /// <summary>
+        /// Returns the per-user or per-machine WiX folder property for a well-known
+        /// directory type.
+        /// </summary>
+        private static string GetWellKnownBase(string type, bool isMachine)
+        {
+            switch (type.ToLowerInvariant())
+            {
+                case "config":
+                    return isMachine ? "[CommonAppDataFolder]"     : "[AppDataFolder]";
+                case "localdata":
+                    return isMachine ? "[CommonAppDataFolder]"     : "[LocalAppDataFolder]";
+                case "psmodules51":
+                    return isMachine
+                        ? "[ProgramFiles64Folder]\\WindowsPowerShell\\Modules"
+                        : "[PersonalFolder]\\WindowsPowerShell\\Modules";
+                case "psmodules7":
+                    return isMachine
+                        ? "[ProgramFiles64Folder]\\PowerShell\\7\\Modules"
+                        : "[PersonalFolder]\\PowerShell\\Modules";
+                case "desktop":
+                    return isMachine ? "[CommonDesktopFolder]"     : "[DesktopFolder]";
+                case "startmenu":
+                    return isMachine ? "[CommonProgramMenuFolder]" : "[ProgramMenuFolder]";
+                case "startup":
+                    return isMachine ? "[CommonStartupFolder]"     : "[StartupFolder]";
+                default:
+                    Console.WriteLine($"Warning: Unknown directory type '{type}'");
+                    return string.Empty;
+            }
+        }
+
         private string ResolvePath(string path, string installPath)
         {
             string result = path.Replace('/', '\\');
@@ -657,29 +770,59 @@ namespace AlliePack
             return result;
         }
 
-        private string ResolveFolder(string folder)
+        private string ResolveFolder(string folder, bool isMachine)
         {
+            // Step 1: resolve well-known name aliases (startmenu, desktop, startup)
+            switch (folder.Trim().ToLowerInvariant())
+            {
+                case "startmenu":
+                    folder = isMachine ? "[CommonProgramMenuFolder]" : "[ProgramMenuFolder]";
+                    break;
+                case "desktop":
+                    folder = isMachine ? "[CommonDesktopFolder]"     : "[DesktopFolder]";
+                    break;
+                case "startup":
+                    folder = isMachine ? "[CommonStartupFolder]"     : "[StartupFolder]";
+                    break;
+            }
+
             string result = folder.Replace('/', '\\');
-            
-            // Map common properties to WixSharp format (%)
+
+            // Step 2: convert per-user WiX bracket properties to WixSharp % keywords
+            // (WixSharp requires % form for its shortcut Dir entities).
+            // Common/all-users variants stay in bracket form -- WiX handles them directly.
             if (result.StartsWith("[ProgramMenuFolder]", StringComparison.OrdinalIgnoreCase))
                 result = "%ProgramMenu%" + result.Substring("[ProgramMenuFolder]".Length);
             else if (result.StartsWith("[Desktop]", StringComparison.OrdinalIgnoreCase))
                 result = "%Desktop%" + result.Substring("[Desktop]".Length);
             else if (result.StartsWith("[DesktopFolder]", StringComparison.OrdinalIgnoreCase))
                 result = "%Desktop%" + result.Substring("[DesktopFolder]".Length);
-            
+            else if (result.StartsWith("[StartupFolder]", StringComparison.OrdinalIgnoreCase))
+                result = "%Startup%" + result.Substring("[StartupFolder]".Length);
+
             return result;
         }
 
         private bool IsStandardWixProperty(string alias)
         {
-            string[] standard = { "[ProgramFilesFolder]", "[ProgramFiles64Folder]", "[CommonFilesFolder]", "[AppDataFolder]", "[LocalAppDataFolder]", "[ProgramMenuFolder]", "[DesktopFolder]", "[TempFolder]" };
+            string[] standard =
+            {
+                "[ProgramFilesFolder]", "[ProgramFiles64Folder]", "[CommonFilesFolder]",
+                "[AppDataFolder]", "[LocalAppDataFolder]", "[CommonAppDataFolder]",
+                "[ProgramMenuFolder]", "[CommonProgramMenuFolder]",
+                "[DesktopFolder]", "[CommonDesktopFolder]",
+                "[StartupFolder]", "[CommonStartupFolder]",
+                "[PersonalFolder]", "[TempFolder]",
+            };
             return standard.Any(s => s.Equals(alias, StringComparison.OrdinalIgnoreCase));
         }
 
         private void GenerateReport(Project project, List<WixEntity> entities)
         {
+            string rawScope      = _config.Product.InstallScope.Resolve(_activeFlags);
+            string effectiveScope = ComputeEffectiveScope(rawScope);
+            bool isMachineReport  = effectiveScope.Equals("perMachine", StringComparison.OrdinalIgnoreCase);
+
             Console.WriteLine("--- AlliePack MSI Content Report ---");
             Console.WriteLine($"Product: {project.Name}");
             Console.WriteLine($"Manufacturer: {project.ControlPanelInfo.Manufacturer}");
@@ -687,6 +830,11 @@ namespace AlliePack
             Console.WriteLine($"UpgradeCode: {project.GUID}");
             if (_activeFlags.Any())
                 Console.WriteLine($"Active flags: {string.Join(", ", _activeFlags)}");
+            if (rawScope.Equals("both", StringComparison.OrdinalIgnoreCase))
+                Console.WriteLine($"Install scope: both -> {effectiveScope}" +
+                    (!string.IsNullOrEmpty(_options.Scope) ? $" (--scope {_options.Scope})" : " (default -- pass --scope perUser|perMachine)"));
+            else
+                Console.WriteLine($"Install scope: {effectiveScope}");
             Console.WriteLine("------------------------------------");
 
             foreach (var entity in entities)
@@ -698,7 +846,16 @@ namespace AlliePack
             {
                 Console.WriteLine("Environment Variables:");
                 foreach (var ev in _config.Environment)
-                    Console.WriteLine($"  [{ev.Scope.Resolve(_activeFlags)}] {ev.Name} = {ev.Value.Resolve(_activeFlags)}");
+                {
+                    string evScope;
+                    if (ev.Scope != null)
+                        evScope = ev.Scope.Resolve(_activeFlags);
+                    else if (rawScope.Equals("both", StringComparison.OrdinalIgnoreCase))
+                        evScope = isMachineReport ? "machine" : "user";
+                    else
+                        evScope = "user";
+                    Console.WriteLine($"  [{evScope}] {ev.Name} = {ev.Value.Resolve(_activeFlags)}");
+                }
             }
 
             if (_config.Wix?.Fragments.Any() == true)
@@ -718,9 +875,11 @@ namespace AlliePack
                 Console.WriteLine("File Groups (outside INSTALLDIR):");
                 foreach (var group in _config.Groups)
                 {
-                    string dest = _config.Directories
-                        .FirstOrDefault(d => d.Id.Equals(group.DestinationDir, StringComparison.OrdinalIgnoreCase))
-                        ?.Path.Resolve(_activeFlags) ?? group.DestinationDir;
+                    var dirCfg = _config.Directories
+                        .FirstOrDefault(d => d.Id.Equals(group.DestinationDir, StringComparison.OrdinalIgnoreCase));
+                    string dest = dirCfg != null
+                        ? ResolveDirectoryPath(dirCfg, isMachineReport)
+                        : group.DestinationDir;
                     string condNote = group.Condition != null ? $" [condition: {group.Condition}]" : "";
                     Console.WriteLine($"  [{group.Id}] -> {dest}{condNote}");
                     foreach (var item in group.Files)

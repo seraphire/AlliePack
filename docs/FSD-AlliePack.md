@@ -107,10 +107,28 @@ wix:            # optional — raw WiX XML escape hatch
 | `version` | string | yes | — | Four-part: `1.0.0.0` |
 | `description` | string | no | `""` | Control Panel description |
 | `upgradeCode` | GUID string | yes | — | Stable across versions |
-| `installScope` | string or conditional | no | `perMachine` | `perUser` or `perMachine` |
+| `installScope` | string or conditional | no | `perMachine` | `perUser`, `perMachine`, or `both` (see below) |
 | `installDir` | string or conditional | no | `[ProgramFilesFolder]\Manufacturer\Name` | Install root path |
 | `platform` | string | no | `x86` | `x86`, `x64`, `arm64` |
 | `licenseFile` | string | no | — | Path to RTF license file |
+
+#### `installScope: both`
+
+Setting `installScope: both` declares that the config produces both a per-user and a
+per-machine MSI from the same file. The target is selected at build time.
+
+The three tiers of `installScope` are:
+
+| Value | Description |
+|---|---|
+| `perMachine` | Machine-wide install (default). Suitable for legacy apps, VB6, shared tooling. |
+| `perUser` | Current-user install only. No elevation required. |
+| `both` | Supports both. Smart defaults apply (see below); explicit values always override. |
+
+When `installScope: both` is active, AlliePack infers per-user / per-machine defaults
+for `installDir`, `directories[].type`, `environment[].scope`, and shortcut `folder`
+values, so most configs can skip conditional maps entirely. The PerUser/PerMachine
+release flag pattern (see §5.8) remains available for configs that need finer control.
 
 ### 5.3 `aliases:`
 
@@ -156,7 +174,20 @@ A list of `StructureElement` entries defining the INSTALLDIR file tree.
 | `name` | string | Shortcut display name |
 | `target` | string | Path; supports `[INSTALLDIR]` and WiX folder properties |
 | `description` | string | Tooltip text |
-| `folder` | string | Destination; e.g. `[ProgramMenuFolder]`, `[DesktopFolder]` |
+| `folder` | string | Destination; WiX folder property, or a well-known alias (see below) |
+
+**Well-known `folder` aliases** — when `installScope: both`, these resolve to the
+appropriate per-user or per-machine WiX folder property automatically:
+
+| Alias | Per-user | Per-machine |
+|---|---|---|
+| `startmenu` | `[ProgramMenuFolder]` | `[CommonProgramMenuFolder]` |
+| `desktop` | `[DesktopFolder]` | `[CommonDesktopFolder]` |
+| `startup` | `[StartupFolder]` | `[CommonStartupFolder]` |
+
+With a fixed `installScope` (`perUser` or `perMachine`), the same aliases resolve to the
+appropriate single value. An explicit WiX folder property (`[DesktopFolder]`, etc.) is
+always accepted and bypasses alias resolution.
 
 ### 5.6 `environment:`
 
@@ -175,7 +206,39 @@ Named install destinations outside INSTALLDIR.
 | Field | Type | Notes |
 |---|---|---|
 | `id` | string | Reference name used in `groups:` |
-| `path` | string or conditional | Destination path; supports WiX folder properties |
+| `path` | string or conditional | Destination path; supports WiX folder properties. Ignored when `type:` is set. |
+| `type` | string | Well-known location shorthand (see below). Resolved to a scope-aware path. |
+| `subPath` | string | Appended to the `type:` base path. Required when `type:` is used. |
+
+**Well-known `type:` values** — when `installScope: both`, the base path resolves to
+the appropriate per-user or per-machine WiX folder property automatically. With a fixed
+scope, the corresponding single path is used.
+
+| Type | Per-user base | Per-machine base |
+|---|---|---|
+| `config` | `[AppDataFolder]` | `[CommonAppDataFolder]` |
+| `localdata` | `[LocalAppDataFolder]` | `[CommonAppDataFolder]` |
+| `psmodules51` | `[PersonalFolder]\WindowsPowerShell\Modules` | `[ProgramFiles64Folder]\WindowsPowerShell\Modules` |
+| `psmodules7` | `[PersonalFolder]\PowerShell\Modules` | `[ProgramFiles64Folder]\PowerShell\7\Modules` |
+| `desktop` | `[DesktopFolder]` | `[CommonDesktopFolder]` |
+| `startmenu` | `[ProgramMenuFolder]` | `[CommonProgramMenuFolder]` |
+| `startup` | `[StartupFolder]` | `[CommonStartupFolder]` |
+
+Three fallback tiers for path resolution: `type:` (scope-aware) → `userPath:/machinePath:` split keys → full conditional map.
+
+Example using `type:`:
+
+```yaml
+directories:
+  - id: CONFIGDIR
+    type: config
+    subPath: "MyCompany\\MyApp"      # resolves to AppData\MyCompany\MyApp (user)
+                                     #         or ProgramData\MyCompany\MyApp (machine)
+
+  - id: PSMODDIR
+    type: psmodules51
+    subPath: "MyApp"
+```
 
 **`groups:`** — files installed to named directories:
 

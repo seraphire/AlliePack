@@ -281,6 +281,67 @@ AlliePack.exe allie-pack.yaml --flag PerMachine -D VERSION=1.2.0 --output MyApp-
 
 The conditional map syntax (`FlagName: value`, `_else: fallback`) is consistent across all fields that support it: `product.installScope`, `product.installDir`, `directories[].path`, `environment[].scope`, `environment[].value`, `registry[].value`, and variable definitions.
 
+### Dual-Scope Simplified: `installScope: both`
+
+The PerUser/PerMachine flag pattern is powerful but asks the user to write a lot of boilerplate for a very common case. A dedicated `installScope: both` value covers it without any flags:
+
+```yaml
+product:
+  installScope: both
+  # installDir defaults automatically:
+  #   per-user:    [LocalAppDataFolder]\Programs\Manufacturer\Name
+  #   per-machine: [ProgramFiles64Folder]\Manufacturer\Name
+```
+
+When `both` is the active scope, AlliePack infers sane defaults for the companion fields rather than requiring the user to specify conditional maps manually:
+
+| Field | Per-user default | Per-machine default |
+|---|---|---|
+| `product.installDir` | `[LocalAppDataFolder]\Programs\Manufacturer\ProductName` | `[ProgramFiles64Folder]\Manufacturer\ProductName` |
+| `directories[].type: config` | `[AppDataFolder]\Manufacturer\ProductName` | `[CommonAppDataFolder]\Manufacturer\ProductName` |
+| `directories[].type: localdata` | `[LocalAppDataFolder]\Manufacturer\ProductName` | `[CommonAppDataFolder]\Manufacturer\ProductName` |
+| `environment[].scope` | `user` | `machine` |
+| `shortcuts[].folder: startmenu` | `[ProgramMenuFolder]` | `[CommonProgramMenuFolder]` |
+| `shortcuts[].folder: desktop` | `[DesktopFolder]` | `[CommonDesktopFolder]` |
+
+Explicit values always win. Smart defaults only apply when the field is omitted. The PerUser/PerMachine flag pattern remains fully available for configs that need more control.
+
+Both targets are built from the same config with a single `--scope` switch (planned CLI sugar for `both`):
+
+```
+AlliePack.exe allie-pack.yaml --scope perUser    --output MyApp-user.msi
+AlliePack.exe allie-pack.yaml --scope perMachine --output MyApp-machine.msi
+```
+
+### Well-Known Directory Types
+
+The `type:` shorthand in `directories:` maps to scope-aware default path roots.
+This avoids writing full conditional maps for the most common locations.
+
+```yaml
+directories:
+  - id: CONFIGDIR
+    type: config           # per-user: [AppDataFolder]; per-machine: [CommonAppDataFolder]
+    subPath: "MyCompany\\MyApp"
+
+  - id: PSMODDIR
+    type: psmodules51      # per-user: My Documents\WindowsPowerShell\Modules
+    subPath: "MyApp"       # per-machine: Program Files\WindowsPowerShell\Modules\MyApp
+```
+
+| Type | Per-user base | Per-machine base |
+|---|---|---|
+| `config` | `[AppDataFolder]` | `[CommonAppDataFolder]` |
+| `localdata` | `[LocalAppDataFolder]` | `[CommonAppDataFolder]` |
+| `psmodules51` | `[PersonalFolder]\WindowsPowerShell\Modules` | `[ProgramFiles64Folder]\WindowsPowerShell\Modules` |
+| `psmodules7` | `[PersonalFolder]\PowerShell\Modules` | `[ProgramFiles64Folder]\PowerShell\7\Modules` |
+| `desktop` | `[DesktopFolder]` | `[CommonDesktopFolder]` |
+| `startmenu` | `[ProgramMenuFolder]` | `[CommonProgramMenuFolder]` |
+| `startup` | `[StartupFolder]` | `[CommonStartupFolder]` |
+
+`subPath:` is always appended to the resolved base. If `type:` is set, `path:` is ignored.
+Three levels of fallback: `type:` -> `userPath:/machinePath:` split keys -> full conditional map.
+
 ---
 
 ## Phase 5 -- Variables and Includes
