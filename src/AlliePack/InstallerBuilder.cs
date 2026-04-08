@@ -1077,6 +1077,8 @@ namespace AlliePack
                     (!string.IsNullOrEmpty(_options.Scope) ? $" (--scope {_options.Scope})" : " (default -- pass --scope perUser|perMachine)"));
             else
                 Console.WriteLine($"Install scope: {effectiveScope}");
+            if (!string.IsNullOrEmpty(_config.Product.LicenseFile))
+                Console.WriteLine($"License file: {_config.Product.LicenseFile}");
             Console.WriteLine("------------------------------------");
 
             foreach (var entity in entities)

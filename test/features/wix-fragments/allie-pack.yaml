@@ -38,8 +38,13 @@ structure:
 
 wix:
   fragments:
-    # Inline fragment: inject a raw MSI Property into the WiX document.
-    - inline: '<Property Id="WIXFRAGMENTS_INLINE_LOADED" Value="1" />'
+    # Inline fragment: inject a WiX Fragment element directly into the document.
+    # In WiX 4/6 the top-level element must be <Fragment> (or <Package> etc);
+    # child elements like Property, CustomAction, etc. go inside the Fragment.
+    - inline: |
+        <Fragment xmlns="http://wixtoolset.org/schemas/v4/wxs">
+          <Property Id="WIXFRAGMENTS_INLINE_LOADED" Value="1" />
+        </Fragment>
 
-    # File fragment: load a .wxs file containing additional WiX elements.
+    # File fragment: load a .wxs file containing a WiX Fragment element.
     - file: "here:extra.wxs"

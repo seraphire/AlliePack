@@ -1,0 +1,51 @@
+# define-tokens feature test
+#
+# Demonstrates: --define / -D token substitution in YAML before parsing.
+#
+# Tokens use the [KEY] syntax and are replaced everywhere in the file.
+# This lets a single YAML template produce multiple variant MSIs without
+# conditional blocks or separate config files.
+#
+# Common use cases:
+#   - Inject build-time version from CI (e.g. from git tag or build number)
+#   - Vary product name/edition for OEM or channel builds
+#   - Parameterise install paths or registry keys
+#
+# Build (with substitution):
+#   AlliePack.exe allie-pack.yaml -D VERSION=2.1.0.0 EDITION=Community \
+#       --output output\define-tokens-community.msi
+#
+#   AlliePack.exe allie-pack.yaml -D VERSION=2.1.0.0 EDITION=Professional \
+#       --output output\define-tokens-professional.msi
+#
+# Report (verify resolved values without building):
+#   AlliePack.exe allie-pack.yaml -D VERSION=2.1.0.0 EDITION=Community --report
+#
+# NOTE: Multiple tokens are passed space-separated after a single -D flag.
+# NOTE: Tokens in this file that match WiX runtime properties (e.g. [INSTALLDIR])
+# are intentionally NOT defined here, so they pass through to WiX unchanged.
+
+product:
+  name: "DefineTest [EDITION]"
+  manufacturer: "AlliePack"
+  version: "[VERSION]"
+  upgradeCode: "a1b2c3d4-0001-0002-0003-000000000050"
+  platform: "x64"
+  installScope: perMachine
+
+aliases:
+  bin: "."
+
+structure:
+  - source: "bin:app.exe"
+
+environment:
+  - name: "DEFINETEST_EDITION"
+    value: "[EDITION]"
+    scope: machine
+
+shortcuts:
+  - name: "DefineTest [EDITION]"
+    target: "[INSTALLDIR]\\app.exe"
+    description: "DefineTest [EDITION] shortcut"
+    folder: startmenu

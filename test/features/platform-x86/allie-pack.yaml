@@ -1,0 +1,44 @@
+# platform-x86 feature test
+#
+# Demonstrates: platform: x86 targeting.
+#
+# With platform: x86 the generated MSI installs to:
+#   perMachine: [ProgramFilesFolder]\AlliePack\PlatformX86Test
+#               (the 32-bit Program Files folder on 64-bit Windows)
+#
+# Registry writes use 32-bit (WOW6432Node) hive by default because win64
+# defaults to false when the platform is x86.
+#
+# Build:
+#   AlliePack.exe allie-pack.yaml --output output\platform-x86.msi
+#
+# Report:
+#   AlliePack.exe allie-pack.yaml --report
+
+product:
+  name: "PlatformX86Test"
+  manufacturer: "AlliePack"
+  version: "1.0.0.0"
+  upgradeCode: "a1b2c3d4-0001-0002-0003-000000000060"
+  platform: "x86"
+  installScope: perMachine
+
+aliases:
+  bin: "."
+
+structure:
+  - source: "bin:app.exe"
+
+registry:
+  # win64 defaults to false for x86 platform -- writes to WOW6432Node
+  - root: HKLM
+    key: "Software\\AlliePack\\PlatformX86Test"
+    name: "InstallDir"
+    value: "[INSTALLDIR]"
+    type: string
+
+shortcuts:
+  - name: "PlatformX86Test"
+    target: "[INSTALLDIR]\\app.exe"
+    description: "x86 platform test shortcut"
+    folder: startmenu

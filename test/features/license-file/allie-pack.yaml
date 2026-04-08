@@ -1,0 +1,31 @@
+# license-file feature test
+#
+# Demonstrates: product.licenseFile -- attaches an RTF license to the installer UI.
+#
+# When licenseFile is set, the WixUI Welcome/License dialog is shown during
+# installation.  The user must scroll through and accept the license before
+# the install can proceed.
+#
+# The file path is resolved via aliases (here: = YAML directory).
+#
+# Build:
+#   AlliePack.exe allie-pack.yaml --output output\license-file.msi
+#
+# Report:
+#   AlliePack.exe allie-pack.yaml --report
+
+product:
+  name: "LicenseFileTest"
+  manufacturer: "AlliePack"
+  version: "1.0.0.0"
+  upgradeCode: "a1b2c3d4-0001-0002-0003-000000000070"
+  platform: "x64"
+  installScope: perMachine
+  licenseFile: "here:license.rtf"
+
+aliases:
+  bin: "."
+  here: "."
+
+structure:
+  - source: "bin:app.exe"

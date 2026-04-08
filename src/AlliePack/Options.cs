@@ -19,10 +19,10 @@ namespace AlliePack
         [Option('v', "verbose", Required = false, HelpText = "Enable verbose output.")]
         public bool Verbose { get; set; }
 
-        [Option('D', "define", Required = false, Separator = ',',
-            HelpText = "Define a substitution token used in the config file. Format: KEY=VALUE. " +
+        [Option('D', "define", Required = false,
+            HelpText = "Define substitution tokens used in the config file. Format: KEY=VALUE. " +
                        "Replaces [KEY] anywhere in the YAML before parsing. " +
-                       "Example: -D VERSION=2.1.0 -D SUFFIX=Beta")]
+                       "Pass multiple tokens space-separated after one flag: -D VERSION=2.1.0 EDITION=Pro")]
         public IEnumerable<string> Defines { get; set; } = new List<string>();
 
         [Option("flag", Required = false,
