@@ -8,3 +8,4 @@ build*.log
 build*.txt
 errors*.txt
 **/.cr
+.claude/settings.local.json

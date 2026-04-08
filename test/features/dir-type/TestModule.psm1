@@ -1,0 +1,2 @@
+# TestModule
+function Get-Test {}

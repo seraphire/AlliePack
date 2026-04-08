@@ -1,0 +1,46 @@
+# install-scope-both feature test
+#
+# Demonstrates: installScope: both with smart defaults and --scope override.
+#
+# A single config produces both a per-user and a per-machine MSI with no
+# conditional maps or release flags.  AlliePack infers the correct installDir,
+# environment variable scope, and shortcut folder from the effective scope.
+#
+# Smart defaults when no installDir is set:
+#   perUser:    [LocalAppDataFolder]\Programs\AlliePack\ScopeBothTest
+#   perMachine: [ProgramFiles64Folder]\AlliePack\ScopeBothTest
+#
+# Build:
+#   AlliePack.exe allie-pack.yaml --scope perUser    --output output\scope-both-user.msi
+#   AlliePack.exe allie-pack.yaml --scope perMachine --output output\scope-both-machine.msi
+#
+# Report (verify resolved values without building):
+#   AlliePack.exe allie-pack.yaml --scope perUser    --report
+#   AlliePack.exe allie-pack.yaml --scope perMachine --report
+
+product:
+  name: "ScopeBothTest"
+  manufacturer: "AlliePack"
+  version: "1.0.0.0"
+  upgradeCode: "a1b2c3d4-0001-0002-0003-000000000010"
+  platform: "x64"
+  installScope: both        # no installDir -- smart defaults apply
+
+aliases:
+  bin: "."
+
+structure:
+  - source: "bin:app.exe"
+
+environment:
+  - name: "SCOPETEST_HOME"
+    value: "[INSTALLDIR]"
+    # scope not set -- auto-derives from effective scope:
+    #   perUser    -> user
+    #   perMachine -> machine
+
+shortcuts:
+  - name: "ScopeBothTest"
+    target: "[INSTALLDIR]\\app.exe"
+    description: "Scope both test shortcut"
+    folder: startmenu       # alias: resolves to [ProgramMenuFolder] or [CommonProgramMenuFolder]

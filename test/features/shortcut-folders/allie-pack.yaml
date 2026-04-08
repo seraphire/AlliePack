@@ -1,0 +1,53 @@
+# shortcut-folders feature test
+#
+# Demonstrates: shortcut folder: aliases for startmenu, desktop, and startup.
+#
+# The folder: value accepts well-known aliases that resolve to scope-appropriate
+# WiX folder properties:
+#
+#   startmenu  -> [ProgramMenuFolder]       (perUser)
+#                 [CommonProgramMenuFolder]  (perMachine)
+#
+#   desktop    -> [DesktopFolder]           (perUser)
+#                 [CommonDesktopFolder]     (perMachine)
+#
+#   startup    -> [StartupFolder]           (perUser)
+#                 [CommonStartupFolder]     (perMachine)
+#
+# Build:
+#   AlliePack.exe allie-pack.yaml --scope perUser    --output output\shortcut-folders-user.msi
+#   AlliePack.exe allie-pack.yaml --scope perMachine --output output\shortcut-folders-machine.msi
+#
+# Report:
+#   AlliePack.exe allie-pack.yaml --scope perUser    --report
+#   AlliePack.exe allie-pack.yaml --scope perMachine --report
+
+product:
+  name: "ShortcutFoldersTest"
+  manufacturer: "AlliePack"
+  version: "1.0.0.0"
+  upgradeCode: "a1b2c3d4-0001-0002-0003-000000000030"
+  platform: "x64"
+  installScope: both
+
+aliases:
+  bin: "."
+
+structure:
+  - source: "bin:app.exe"
+
+shortcuts:
+  - name: "ShortcutFoldersTest"
+    target: "[INSTALLDIR]\\app.exe"
+    description: "Start menu shortcut - resolves to user or common folder"
+    folder: startmenu
+
+  - name: "ShortcutFoldersTest Desktop"
+    target: "[INSTALLDIR]\\app.exe"
+    description: "Desktop shortcut - resolves to user or common desktop"
+    folder: desktop
+
+  - name: "ShortcutFoldersTest Startup"
+    target: "[INSTALLDIR]\\app.exe"
+    description: "Startup shortcut - resolves to user or common startup"
+    folder: startup

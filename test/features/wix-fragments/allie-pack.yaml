@@ -1,0 +1,45 @@
+# wix-fragments feature test
+#
+# Demonstrates: wix: fragments: escape hatch for raw WiX XML injection.
+#
+# Two injection forms are tested:
+#
+#   inline: -- XML string embedded directly in the YAML file.
+#             Use for short snippets that don't warrant a separate file.
+#
+#   file:   -- Path to a .wxs file (resolved via aliases).
+#             Use for larger or reusable WiX fragments.
+#
+# Typical use cases:
+#   - MSI Properties not exposed by AlliePack
+#   - Custom actions and install sequence steps
+#   - Advanced WiX elements (AppSearch, LaunchCondition, etc.)
+#
+# Build:
+#   AlliePack.exe allie-pack.yaml --output output\wix-fragments.msi
+#
+# Report:
+#   AlliePack.exe allie-pack.yaml --report
+
+product:
+  name: "WixFragmentsTest"
+  manufacturer: "AlliePack"
+  version: "1.0.0.0"
+  upgradeCode: "a1b2c3d4-0001-0002-0003-000000000040"
+  platform: "x64"
+  installScope: perMachine
+
+aliases:
+  bin: "."
+  here: "."
+
+structure:
+  - source: "bin:app.exe"
+
+wix:
+  fragments:
+    # Inline fragment: inject a raw MSI Property into the WiX document.
+    - inline: '<Property Id="WIXFRAGMENTS_INLINE_LOADED" Value="1" />'
+
+    # File fragment: load a .wxs file containing additional WiX elements.
+    - file: "here:extra.wxs"

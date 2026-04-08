@@ -1,0 +1,60 @@
+# dir-type feature test
+#
+# Demonstrates: directories[].type shorthand for well-known locations.
+#
+# Instead of writing full WiX folder property paths or conditional maps,
+# a type: key selects the correct base path for the effective install scope.
+#
+# Well-known types tested here:
+#   config      -> AppData (perUser) / ProgramData (perMachine)
+#   psmodules51 -> My Documents\WindowsPowerShell\Modules (perUser)
+#                  Program Files\WindowsPowerShell\Modules (perMachine)
+#
+# Build:
+#   AlliePack.exe allie-pack.yaml --scope perUser    --output output\dir-type-user.msi
+#   AlliePack.exe allie-pack.yaml --scope perMachine --output output\dir-type-machine.msi
+#
+# Report:
+#   AlliePack.exe allie-pack.yaml --scope perUser    --report
+#   AlliePack.exe allie-pack.yaml --scope perMachine --report
+
+product:
+  name: "DirTypeTest"
+  manufacturer: "AlliePack"
+  version: "1.0.0.0"
+  upgradeCode: "a1b2c3d4-0001-0002-0003-000000000020"
+  platform: "x64"
+  installScope: both
+
+aliases:
+  bin: "."
+
+structure:
+  - source: "bin:app.exe"
+
+directories:
+  # type: config
+  #   perUser:    [AppDataFolder]\AlliePack\DirTypeTest
+  #   perMachine: [CommonAppDataFolder]\AlliePack\DirTypeTest
+  - id: CONFIGDIR
+    type: config
+    subPath: "AlliePack\\DirTypeTest"
+
+  # type: psmodules51
+  #   perUser:    [PersonalFolder]\WindowsPowerShell\Modules\DirTypeTest
+  #   perMachine: [ProgramFiles64Folder]\WindowsPowerShell\Modules\DirTypeTest
+  - id: PSMODDIR51
+    type: psmodules51
+    subPath: "DirTypeTest"
+
+groups:
+  - id: AppConfig
+    destinationDir: CONFIGDIR
+    condition: notExists
+    files:
+      - source: "bin:app.config.ini"
+
+  - id: PsModule
+    destinationDir: PSMODDIR51
+    files:
+      - source: "bin:TestModule.psm1"
