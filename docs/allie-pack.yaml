@@ -22,9 +22,16 @@ structure:
       - source: "bin:*.dll"
         excludeFiles:
           - "*.pdb"
+
   - folder: "Samples"
     contents:
       - source: "[GitRoot]/test/features/**/*"
+        excludeFiles:
+          - "*.msi"
+          - "*.exe"
+          - "*.dll"
+          - "bin/**/*"
+          - "obj/**/*"
 
 # Uncomment to build from Visual Studio outputs instead:
 #
