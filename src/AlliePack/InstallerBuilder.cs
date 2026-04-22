@@ -386,10 +386,13 @@ namespace AlliePack
                 project.Platform = Platform.arm64;
             }
 
-            project.GUID = new Guid(_config.Product.UpgradeCode);
+            string resolvedVersion = _config.Product.Version.Resolve(_resolver);
+
+            project.GUID      = new Guid(_config.Product.UpgradeCode);
+            project.ProductId = Guid.NewGuid();
             project.ControlPanelInfo.Manufacturer = _config.Product.Manufacturer;
             project.Description = _config.Product.Description;
-            project.Version = new Version(_config.Product.Version.Resolve(_resolver));
+            project.Version = new Version(resolvedVersion);
 
             project.AttributesDefinition = isMachine ? "Scope=perMachine" : "Scope=perUser";
 
