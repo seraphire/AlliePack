@@ -442,7 +442,7 @@ namespace AlliePack
                             }
                             else if (!string.IsNullOrWhiteSpace(fragment.File))
                             {
-                                xml = XElement.Load(_resolver.Resolve(fragment.File));
+                                xml = XElement.Load(_resolver.Resolve(fragment.File!));
                             }
                             else continue;
 
@@ -571,9 +571,9 @@ namespace AlliePack
 
                 if (filesWithPaths.Count == 0)
                 {
-                    if (!string.IsNullOrEmpty(element.Source) && !element.Source.Contains("*") && !element.Source.Contains("?"))
+                    if (!string.IsNullOrEmpty(element.Source) && !element.Source!.Contains("*") && !element.Source.Contains("?"))
                     {
-                        string sourcePath = _resolver.Resolve(element.Source ?? "");
+                        string sourcePath = _resolver.Resolve(element.Source);
                         result.Add(new ResolvedFile {
                             SourcePath = sourcePath,
                             RelativeDestinationPath = Path.Combine(newPath, Path.GetFileName(sourcePath))
@@ -911,7 +911,7 @@ namespace AlliePack
                 return rawInstallScope;
 
             if (!string.IsNullOrEmpty(_options.Scope))
-                return _options.Scope.Equals("perMachine", StringComparison.OrdinalIgnoreCase)
+                return _options.Scope!.Equals("perMachine", StringComparison.OrdinalIgnoreCase)
                     ? "perMachine"
                     : "perUser";
 
@@ -1110,7 +1110,7 @@ namespace AlliePack
                     if (!string.IsNullOrWhiteSpace(f.File))
                         Console.WriteLine($"  [file]   {f.File}");
                     else if (!string.IsNullOrWhiteSpace(f.Inline))
-                        Console.WriteLine($"  [inline] {f.Inline.Trim().Split('\n')[0].Trim()}...");
+                        Console.WriteLine($"  [inline] {f.Inline!.Trim().Split('\n')[0].Trim()}...");
                 }
             }
 
