@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
+using System.Text.RegularExpressions;
 using YamlDotNet.Core;
 using YamlDotNet.Core.Events;
 using YamlDotNet.Serialization;
@@ -81,6 +83,152 @@ namespace AlliePack
     }
 
     // -----------------------------------------------------------------------
+    // VersionSource
+    //
+    // A YAML field that may be either a plain scalar or a file-extraction block:
+    //
+    //   # Scalar form:
+    //   version: "1.0.0.0"
+    //
+    //   # File form (reads FileVersionInfo from the built binary):
+    //   version:
+    //     file: "bin:MyApp.exe"
+    //     source: "file-version"     # or "product-version" (default: file-version)
+    //
+    // Call Resolve(resolver) to get the effective string value.
+    // -----------------------------------------------------------------------
+
+    public class VersionSource
+    {
+        private readonly string? _literal;
+        private readonly string? _file;
+        private readonly string _source;
+        private readonly string? _tagPrefix;
+
+        public VersionSource(string literal) { _literal = literal; _source = "file-version"; }
+
+        private VersionSource(string? file, string source, string? tagPrefix)
+        {
+            _file = file;
+            _source = source;
+            _tagPrefix = tagPrefix;
+        }
+
+        public static VersionSource ForFile(string file, string source) => new(file, source, null);
+        public static VersionSource ForGit(string? tagPrefix) => new(null, "git-tag", tagPrefix);
+
+        public string Resolve(PathResolver resolver)
+        {
+            if (_literal != null) return _literal;
+            if (_source.Equals("git-tag", StringComparison.OrdinalIgnoreCase))
+                return ResolveFromGit(resolver.WorkingDirectory);
+            string path = resolver.Resolve(_file!);
+            var fvi = FileVersionInfo.GetVersionInfo(path);
+            if (_source.Equals("product-version", StringComparison.OrdinalIgnoreCase))
+                return fvi.ProductVersion ?? "1.0.0.0";
+            return fvi.FileVersion ?? "1.0.0.0";
+        }
+
+        private string ResolveFromGit(string workDir)
+        {
+            string prefix = _tagPrefix ?? "v";
+            string? described = RunGit($"describe --tags --long --match \"{prefix}*\"", workDir);
+            if (described != null)
+            {
+                // Format: v1.2.3-7-gabcdef  =>  strip prefix, remove hash, split count
+                if (described.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    described = described.Substring(prefix.Length);
+
+                // Remove trailing -g<hash>
+                described = Regex.Replace(described, @"-g[0-9a-f]+$", "");
+
+                int dash = described.LastIndexOf('-');
+                if (dash > 0 && int.TryParse(described.Substring(dash + 1), out int commitCount))
+                {
+                    string tag = described.Substring(0, dash);
+                    var parts = tag.Split('.');
+                    string major = parts.Length > 0 ? parts[0] : "0";
+                    string minor = parts.Length > 1 ? parts[1] : "0";
+                    string patch = parts.Length > 2 ? parts[2] : "0";
+                    return $"{major}.{minor}.{patch}.{commitCount}";
+                }
+            }
+
+            // No matching tag — fall back to 0.0.0.{total commits}
+            string? countStr = RunGit("rev-list --count HEAD", workDir);
+            int totalCommits = 0;
+            if (countStr != null) int.TryParse(countStr.Trim(), out totalCommits);
+            return $"0.0.0.{totalCommits}";
+        }
+
+        private static string? RunGit(string args, string workDir)
+        {
+            try
+            {
+                var psi = new ProcessStartInfo("git", args)
+                {
+                    WorkingDirectory = workDir,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                using var process = Process.Start(psi);
+                if (process == null) return null;
+                string output = process.StandardOutput.ReadToEnd().Trim();
+                process.WaitForExit();
+                return process.ExitCode == 0 ? output : null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        public override string ToString() => _literal ?? (_source == "git-tag" ? "(from git)" : $"(from {_file})");
+    }
+
+    public class VersionSourceConverter : IYamlTypeConverter
+    {
+        public bool Accepts(Type type) => type == typeof(VersionSource);
+
+        public object ReadYaml(IParser parser, Type type, ObjectDeserializer rootDeserializer)
+        {
+            if (parser.Current is Scalar scalar)
+            {
+                parser.MoveNext();
+                return new VersionSource(scalar.Value);
+            }
+            if (parser.Current is MappingStart)
+            {
+                parser.MoveNext();
+                string? file = null;
+                string source = "file-version";
+                string? tagPrefix = null;
+                while (!(parser.Current is MappingEnd))
+                {
+                    string key = ((Scalar)parser.Current!).Value;
+                    parser.MoveNext();
+                    string value = ((Scalar)parser.Current!).Value;
+                    parser.MoveNext();
+                    if (key.Equals("file", StringComparison.OrdinalIgnoreCase)) file = value;
+                    else if (key.Equals("source", StringComparison.OrdinalIgnoreCase)) source = value;
+                    else if (key.Equals("tagPrefix", StringComparison.OrdinalIgnoreCase)) tagPrefix = value;
+                }
+                parser.MoveNext(); // consume MappingEnd
+                if (source.Equals("git-tag", StringComparison.OrdinalIgnoreCase))
+                    return VersionSource.ForGit(tagPrefix);
+                if (file == null) throw new InvalidOperationException("version block requires a 'file' key");
+                return VersionSource.ForFile(file, source);
+            }
+            throw new InvalidOperationException("Expected scalar or mapping for VersionSource");
+        }
+
+        public void WriteYaml(IEmitter emitter, object? value, Type type, ObjectSerializer serializer)
+            => throw new NotImplementedException();
+    }
+
+    // -----------------------------------------------------------------------
     // Top-level config
     // -----------------------------------------------------------------------
 
@@ -134,7 +282,7 @@ namespace AlliePack
     {
         public string Name { get; set; } = "My Product";
         public string Manufacturer { get; set; } = "My Company";
-        public string Version { get; set; } = "1.0.0.0";
+        public VersionSource Version { get; set; } = new VersionSource("1.0.0.0");
         public string Description { get; set; } = string.Empty;
         public string UpgradeCode { get; set; } = Guid.NewGuid().ToString();
 

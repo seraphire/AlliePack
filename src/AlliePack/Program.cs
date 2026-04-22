@@ -55,6 +55,7 @@ namespace AlliePack
                 var deserializer = new DeserializerBuilder()
                     .WithNamingConvention(CamelCaseNamingConvention.Instance)
                     .WithTypeConverter(new ConditionalStringConverter())
+                    .WithTypeConverter(new VersionSourceConverter())
                     .Build();
 
                 var config = deserializer.Deserialize<AlliePackConfig>(yaml);
@@ -72,7 +73,7 @@ namespace AlliePack
                 var solutionResolver = new SolutionResolver(resolver);
                 var builder = new InstallerBuilder(config, resolver, solutionResolver, options, activeFlags);
 
-                Console.WriteLine($"Building MSI for {config.Product.Name} v{config.Product.Version}...");
+                Console.WriteLine($"Building MSI for {config.Product.Name} v{config.Product.Version.Resolve(resolver)}...");
                 builder.Build();
 
                 Console.WriteLine("Done.");

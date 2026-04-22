@@ -389,7 +389,7 @@ namespace AlliePack
             project.GUID = new Guid(_config.Product.UpgradeCode);
             project.ControlPanelInfo.Manufacturer = _config.Product.Manufacturer;
             project.Description = _config.Product.Description;
-            project.Version = new Version(_config.Product.Version);
+            project.Version = new Version(_config.Product.Version.Resolve(_resolver));
 
             project.AttributesDefinition = isMachine ? "Scope=perMachine" : "Scope=perUser";
 

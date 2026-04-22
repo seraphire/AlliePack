@@ -11,6 +11,8 @@ namespace AlliePack
         private readonly string? _gitRoot;
         private readonly Dictionary<string, string> _aliases;
 
+        public string WorkingDirectory => _gitRoot ?? _yamlDir;
+
         public PathResolver(string yamlFilePath, Dictionary<string, string> aliases)
         {
             _yamlDir = Path.GetDirectoryName(Path.GetFullPath(yamlFilePath)) ?? Environment.CurrentDirectory;
