@@ -297,6 +297,11 @@ namespace AlliePack
 
         [YamlMember(Alias = "licenseFile")]
         public string? LicenseFile { get; set; }
+
+        // "true"/"."/null for [INSTALLDIR]; a folder name like "App" for [INSTALLDIR]App;
+        // null or "false" to disable.
+        [YamlMember(Alias = "addToPath")]
+        public string? AddToPath { get; set; }
     }
 
     // -----------------------------------------------------------------------

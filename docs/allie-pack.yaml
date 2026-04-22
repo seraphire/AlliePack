@@ -3,13 +3,14 @@
 
 product:
   name: "AlliePack"
-  manufacturer: "Antigravity"
+  manufacturer: "AlliePack"
   version:
     source: "git-tag"
   description: "AlliePack installer builder"
   upgradeCode: "28e08d6c-67c8-47e1-95c5-0e6e7686588a"
   installScope: "perMachine"
   platform: "x64"
+  addToPath: "App"
   # licenseFile: "license.rtf"   # uncomment to add a license agreement dialog
 
 aliases:

@@ -398,32 +398,110 @@ namespace AlliePack
             // -sw5437: suppress "no longer necessary to define standard directory" (WiX 6 advisory, WixSharp emits these)
             project.WixOptions = "-sw1044 -sw5437";
 
+            // Resolve addToPath setting: null/"false" disables the feature.
+            // "true"/"." -> [INSTALLDIR];  "App" -> [INSTALLDIR]App;  etc.
+            string? addToPathRaw = _config.Product.AddToPath;
+            bool hasAddToPath = !string.IsNullOrEmpty(addToPathRaw)
+                && !addToPathRaw!.Equals("false", StringComparison.OrdinalIgnoreCase)
+                && addToPathRaw != "0";
+            string addToPathValue = string.Empty;
+            if (hasAddToPath)
+            {
+                bool isInstallDir = addToPathRaw!.Equals("true", StringComparison.OrdinalIgnoreCase)
+                    || addToPathRaw == "." || addToPathRaw == "1";
+                addToPathValue = isInstallDir ? "[INSTALLDIR]" : $"[INSTALLDIR]{addToPathRaw}";
+            }
+
             // Configure installer UI. Always use ManagedUI for a consistent look;
             // include the licence dialog only when a license file is supplied.
             var ui = new ManagedUI();
             if (!string.IsNullOrEmpty(_config.Product.LicenseFile))
             {
                 project.LicenceFile = _resolver.Resolve(_config.Product.LicenseFile!);
-                ui.InstallDialogs
-                    .Add<WelcomeDialog>()
-                    .Add<LicenceDialog>()
-                    .Add<InstallDirDialog>()
-                    .Add<ProgressDialog>()
-                    .Add<ExitDialog>();
+                if (hasAddToPath)
+                    ui.InstallDialogs
+                        .Add<WelcomeDialog>()
+                        .Add<LicenceDialog>()
+                        .Add<InstallDirDialog>()
+                        .Add<AddToPathDialog>()
+                        .Add<ProgressDialog>()
+                        .Add<ExitDialog>();
+                else
+                    ui.InstallDialogs
+                        .Add<WelcomeDialog>()
+                        .Add<LicenceDialog>()
+                        .Add<InstallDirDialog>()
+                        .Add<ProgressDialog>()
+                        .Add<ExitDialog>();
             }
             else
             {
-                ui.InstallDialogs
-                    .Add<WelcomeDialog>()
-                    .Add<InstallDirDialog>()
-                    .Add<ProgressDialog>()
-                    .Add<ExitDialog>();
+                if (hasAddToPath)
+                    ui.InstallDialogs
+                        .Add<WelcomeDialog>()
+                        .Add<InstallDirDialog>()
+                        .Add<AddToPathDialog>()
+                        .Add<ProgressDialog>()
+                        .Add<ExitDialog>();
+                else
+                    ui.InstallDialogs
+                        .Add<WelcomeDialog>()
+                        .Add<InstallDirDialog>()
+                        .Add<ProgressDialog>()
+                        .Add<ExitDialog>();
             }
             ui.ModifyDialogs
                 .Add<MaintenanceTypeDialog>()
                 .Add<ProgressDialog>()
                 .Add<ExitDialog>();
             project.ManagedUI = ui;
+
+            if (hasAddToPath)
+            {
+
+                // Append PATH env var, conditioned on the user's checkbox choice.
+                var pathEnv = new EnvironmentVariable("PATH", addToPathValue)
+                {
+                    System = isMachine,
+                    Permanent = false,
+                    Action = EnvVarAction.set,
+                    Part = EnvVarPart.last,
+                    AttributesDefinition = "Separator=;",
+                    Condition = new Condition("ADDTOPATH = \"1\""),
+                };
+                targetDir!.GenericItems = (targetDir.GenericItems ?? new IGenericEntity[0])
+                    .Concat(new IGenericEntity[] { pathEnv })
+                    .ToArray();
+
+                // Save the user's choice to registry so upgrades can restore it.
+                string regKey = $@"SOFTWARE\{_config.Product.Manufacturer}\{_config.Product.Name}";
+                RegistryHive regHive = isMachine ? RegistryHive.LocalMachine : RegistryHive.CurrentUser;
+                entities.Add(new RegValue(regHive, regKey, "AddToPath", "[ADDTOPATH]"));
+
+                // Inject an ADDTOPATH Property with a RegistrySearch so upgrades
+                // restore the user's previous choice automatically.
+                string regRoot = isMachine ? "HKLM" : "HKCU";
+                project.WixSourceGenerated += document =>
+                {
+                    XNamespace ns = "http://wixtoolset.org/schemas/v4/wxs";
+                    var package = document.Root!.Descendants(ns + "Package").FirstOrDefault()
+                                  ?? document.Root!.Descendants().FirstOrDefault(e => e.Name.LocalName == "Package");
+                    package?.Add(new XElement(ns + "Property",
+                        new XAttribute("Id", "ADDTOPATH"),
+                        new XAttribute("Value", "1"),
+                        new XElement(ns + "RegistrySearch",
+                            new XAttribute("Id", "SearchAddToPath"),
+                            new XAttribute("Root", regRoot),
+                            new XAttribute("Key", regKey),
+                            new XAttribute("Name", "AddToPath"),
+                            new XAttribute("Type", "raw"))));
+                    // List ADDTOPATH as a secure property so it is passed from the UI
+                    // sequence to the elevated execute sequence on perMachine installs.
+                    package?.Add(new XElement(ns + "Property",
+                        new XAttribute("Id", "SecureCustomProperties"),
+                        new XAttribute("Value", "ADDTOPATH")));
+                };
+            }
 
             // Raw WiX XML fragments -- escape hatch for anything AlliePack doesn't cover
             if (_config.Wix?.Fragments.Any() == true)
