@@ -20,23 +20,27 @@ namespace AlliePack
             _aliases = aliases;
         }
 
-        public string Resolve(string path)
+        private string ApplyTokens(string path)
         {
-            // Replace tokens
             path = path.Replace("[YamlDir]", _yamlDir)
                        .Replace("[CurrentDir]", Environment.CurrentDirectory);
-            
             if (_gitRoot != null)
-            {
                 path = path.Replace("[GitRoot]", _gitRoot);
-            }
+            return path;
+        }
 
-            // Replace aliases
+        public string Resolve(string path)
+        {
+            path = ApplyTokens(path);
+
+            // Replace aliases, then apply tokens again so alias values like
+            // "[GitRoot]/src/..." resolve correctly.
             foreach (var alias in _aliases)
             {
                 if (path.StartsWith(alias.Key + ":"))
                 {
-                    path = Path.Combine(alias.Value, path.Substring(alias.Key.Length + 1));
+                    string aliasValue = ApplyTokens(alias.Value);
+                    path = Path.Combine(aliasValue, path.Substring(alias.Key.Length + 1));
                     break; // Only one alias per path
                 }
             }

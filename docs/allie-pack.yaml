@@ -3,7 +3,7 @@
 
 product:
   name: "AlliePack"
-  manufacturer: "Antigravity"
+  manufacturer: "ByteCraft"
   version:
     source: "git-tag"
   description: "AlliePack installer builder"
@@ -13,7 +13,7 @@ product:
   # licenseFile: "license.rtf"   # uncomment to add a license agreement dialog
 
 aliases:
-  bin: "src/AlliePack/bin/Release/net481"
+  bin: "[GitRoot]/src/AlliePack/bin/Release/net481"
 
 structure:
   - folder: "App"
