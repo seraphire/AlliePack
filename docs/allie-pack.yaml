@@ -16,12 +16,15 @@ aliases:
   bin: "[GitRoot]/src/AlliePack/bin/Release/net481"
 
 structure:
-  - folder: 
+  - folder:
     contents:
       - source: "bin:AlliePack.exe"
       - source: "bin:*.dll"
         excludeFiles:
           - "*.pdb"
+  - folder: "Samples"
+    contents:
+      - source: "[GitRoot]/test/features/**/*"
 
 # Uncomment to build from Visual Studio outputs instead:
 #

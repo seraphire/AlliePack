@@ -31,6 +31,8 @@ namespace AlliePack
                 if (!File.Exists(configPath))
                 {
                     Console.WriteLine($"Error: Configuration file not found at {configPath}");
+                    Console.WriteLine("Create an allie-pack.yaml in the current directory, or pass a path as the first argument.");
+                    Console.WriteLine("Run with --help to see all options.");
                     return;
                 }
 
