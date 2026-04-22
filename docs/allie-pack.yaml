@@ -16,7 +16,7 @@ aliases:
   bin: "[GitRoot]/src/AlliePack/bin/Release/net481"
 
 structure:
-  - folder: "App"
+  - folder: 
     contents:
       - source: "bin:AlliePack.exe"
       - source: "bin:*.dll"
@@ -35,6 +35,6 @@ structure:
 
 shortcuts:
   - name: "AlliePack"
-    target: "[INSTALLDIR]\\App\\AlliePack.exe"
+    target: "[INSTALLDIR]\\AlliePack.exe"
     description: "AlliePack MSI builder"
     folder: "[ProgramMenuFolder]"
