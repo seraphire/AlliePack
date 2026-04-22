@@ -4,7 +4,8 @@
 product:
   name: "AlliePack"
   manufacturer: "Antigravity"
-  version: "1.0.0.0"
+  version:
+    source: "git-tag"
   description: "AlliePack installer builder"
   upgradeCode: "28e08d6c-67c8-47e1-95c5-0e6e7686588a"
   installScope: "perMachine"
@@ -27,7 +28,7 @@ structure:
 # structure:
 #   - folder: "App"
 #     contents:
-#       - solution: "AlliPack.sln"
+#       - solution: "AlliePack.sln"
 #         configuration: "Release"
 #         excludeFiles:
 #           - "*.pdb"
