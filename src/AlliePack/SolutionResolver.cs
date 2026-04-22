@@ -25,7 +25,7 @@ namespace AlliePack
             string fullPath = _pathResolver.Resolve(solutionPath);
             
             if (!File.Exists(fullPath))
-                throw new FileNotFoundException("Solution file not found.", fullPath);
+                throw new FileNotFoundException($"Solution file not found: {fullPath}");
 
             // Using Microsoft.VisualStudio.SolutionPersistence 1.0.9
             ISolutionSerializer? serializer = null;
