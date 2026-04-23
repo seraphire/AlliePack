@@ -1,7 +1,3 @@
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$OutputEncoding           = [System.Text.Encoding]::UTF8
-chcp 65001 | Out-Null
-
 <#
 .SYNOPSIS
     Build an AlliePack MSI and verify it installs and uninstalls correctly.
@@ -63,6 +59,10 @@ param(
     [switch] $FullInstall,
     [switch] $KeepOutput
 )
+
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding           = [System.Text.Encoding]::UTF8
+chcp 65001 | Out-Null
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -230,7 +230,9 @@ if ($FullInstall) {
 } else {
 
     # Verify extracted staging tree
-    $appDir = Join-Path $stagingDir "App"
+    # Admin install extracts under PFiles64\{manufacturer}\{product}\..., so find App dir dynamically
+    $appDirResult = Get-ChildItem $stagingDir -Recurse -Directory -Filter "App" | Select-Object -First 1
+    $appDir = if ($null -ne $appDirResult) { $appDirResult.FullName } else { Join-Path $stagingDir "App" }
 
     # Expected files (customize per test)
     Assert-FileExists (Join-Path $appDir "README.txt") "README.txt"

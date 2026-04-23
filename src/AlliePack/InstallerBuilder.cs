@@ -30,8 +30,8 @@ namespace AlliePack
 
         public void Build()
         {
-            WixExtension.UI.PreferredVersion   = "6.0.2";
-            WixExtension.Util.PreferredVersion = "6.0.2";
+            WixExtension.UI.PreferredVersion   = "5.0.2";
+            WixExtension.Util.PreferredVersion = "5.0.2";
             var allFiles = new List<ResolvedFile>();
             foreach (var element in _config.Structure)
             {
