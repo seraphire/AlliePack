@@ -42,8 +42,9 @@ Options:
   -r, --report              Preview resolved files without building the MSI
   -o, --output <path>       Output path for the generated MSI
   -v, --verbose             Enable verbose output
-  -D, --define KEY=VALUE    Substitute [KEY] tokens in YAML before parsing.
-                            Repeatable: -D VERSION=2.1.0 -D EDITION=Pro
+  -D, --define KEY=VALUE    Override a named token at resolution time.
+                            Repeatable: -D srcRoot=D:\src -D EDITION=Pro
+                            Defines overlay the paths: block; command-line wins.
       --flag <name>         Active release flag. Selects values from conditional
                             maps in the config. Falls back to defaultActiveFlags,
                             then to unconditional values.
@@ -134,6 +135,36 @@ version:
 
 With git-tag sourcing, a tag of `v1.2.3` with 7 commits since the tag produces version `1.2.3.7`. If no matching tag exists, falls back to `0.0.0.<total-commits>`.
 
+### `paths`
+
+Named path tokens for this config. Values may use built-in tokens. Use `--define`
+on the command line to override them — useful for CI where paths differ from local
+development without changing the YAML file.
+
+```yaml
+paths:
+  srcRoot: "[CurrentDir]"          # default to CWD; override in CI with --define srcRoot=...
+  assets:  "[YamlDir]/../assets"
+```
+
+Tokens defined here are used anywhere in the config as `[name]`:
+
+```yaml
+structure:
+  - project: "[srcRoot]/MyApp/MyApp.csproj"
+    configuration: Release
+```
+
+**CI override pattern** — no changes to the YAML needed between environments:
+
+```
+# Local: run AlliePack from the source directory; [CurrentDir] resolves automatically.
+cd C:\src\MyApp && AlliePack path\to\allie-pack.yaml
+
+# CI: working directory is not the source root, so pass it explicitly.
+AlliePack allie-pack.yaml --define srcRoot=$(Build.SourcesDirectory)\src
+```
+
 ### `aliases`
 
 Aliases are short names for paths, used in `source:` fields with the `alias:path` syntax. Token substitution applies inside alias values.
@@ -150,7 +181,7 @@ Built-in path tokens:
 |---|---|
 | `[YamlDir]` | Directory containing the YAML config file |
 | `[GitRoot]` | Root of the nearest git repository |
-| `[CurrentDir]` | Current working directory |
+| `[CurrentDir]` | Current working directory when AlliePack is invoked |
 
 ### `structure`
 
