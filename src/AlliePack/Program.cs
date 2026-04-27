@@ -13,7 +13,7 @@ namespace AlliePack
     {
         static void Main(string[] args)
         {
-            Parser.Default.ParseArguments<Options>(args)
+            CommandLine.Parser.Default.ParseArguments<Options>(args)
                 .WithParsed(Run)
                 .WithNotParsed(errors => { /* Error handling handled by CommandLineParser */ });
         }
@@ -83,8 +83,8 @@ namespace AlliePack
             catch (YamlException ex)
             {
                 // YamlDotNet exceptions carry precise source location -- always show it.
-                int errLine = ex.Start.Line;
-                int errCol  = ex.Start.Column;
+                int errLine = Convert.ToInt32(ex.Start.Line);
+                int errCol  = Convert.ToInt32(ex.Start.Column);
                 Console.WriteLine($"YAML Error at line {errLine}, column {errCol}: {ex.Message}");
 
                 // Print the offending line with a caret so the problem is immediately visible.

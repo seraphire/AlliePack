@@ -662,16 +662,23 @@ namespace AlliePack
                     if (!string.IsNullOrEmpty(element.Source) && !element.Source!.Contains("*") && !element.Source.Contains("?"))
                     {
                         string sourcePath = _resolver.Resolve(element.Source);
+                        Debug($"  source file: {sourcePath}");
                         result.Add(new ResolvedFile {
                             SourcePath = sourcePath,
                             RelativeDestinationPath = Path.Combine(newPath, Path.GetFileName(sourcePath))
                         });
                     }
+                    else
+                    {
+                        Debug($"  source matched 0 files (glob returned nothing)");
+                    }
                 }
                 else
                 {
+                    Debug($"  source matched {filesWithPaths.Count} file(s):");
                     foreach (var (absPath, relPath) in filesWithPaths)
                     {
+                        Debug($"    {absPath}");
                         result.Add(new ResolvedFile {
                             SourcePath = absPath,
                             RelativeDestinationPath = string.IsNullOrEmpty(newPath)
@@ -683,20 +690,42 @@ namespace AlliePack
             }
             else if (!string.IsNullOrEmpty(element.Solution))
             {
+                if (_options.Debug)
+                {
+                    string resolvedSln = _resolver.Resolve(element.Solution!);
+                    Console.WriteLine($"  [debug] solution: {element.Solution}");
+                    Console.WriteLine($"  [debug]       -> {resolvedSln}");
+                }
+
                 var solFiles = _solutionResolver.ResolveSolution(element.Solution ?? "", element.Configuration, element.Platform, element.ExcludeProjects, element.ExcludeFiles);
                 foreach (var f in solFiles)
                 {
                     f.RelativeDestinationPath = Path.Combine(newPath, f.RelativeDestinationPath);
                 }
+
+                Debug($"  solution matched {solFiles.Count} file(s):");
+                foreach (var f in solFiles) Debug($"    {f.SourcePath}");
+
                 result.AddRange(solFiles);
             }
             else if (!string.IsNullOrEmpty(element.Project))
             {
+                if (_options.Debug)
+                {
+                    string resolvedProj = _resolver.Resolve(element.Project!);
+                    Console.WriteLine($"  [debug] project: {element.Project}");
+                    Console.WriteLine($"  [debug]      -> {resolvedProj}");
+                }
+
                 var projFiles = _solutionResolver.ResolveProject(element.Project ?? "", element.Configuration, element.Platform, element.ExcludeFiles);
                 foreach (var f in projFiles)
                 {
                     f.RelativeDestinationPath = Path.Combine(newPath, f.RelativeDestinationPath);
                 }
+
+                Debug($"  project matched {projFiles.Count} file(s):");
+                foreach (var f in projFiles) Debug($"    {f.SourcePath}");
+
                 result.AddRange(projFiles);
             }
 
