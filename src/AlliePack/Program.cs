@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using CommandLine;
+using YamlDotNet.Core;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
@@ -19,6 +20,7 @@ namespace AlliePack
 
         static void Run(Options options)
         {
+            string yaml = string.Empty;   // hoisted so the YamlException catch can show the offending line
             try
             {
                 // Resolve config path: directory -> allie-pack.yaml, empty -> cwd/allie-pack.yaml
@@ -37,7 +39,7 @@ namespace AlliePack
                 }
 
                 Console.WriteLine($"Reading config: {configPath}...");
-                string yaml = File.ReadAllText(configPath);
+                yaml = File.ReadAllText(configPath);
 
                 // Apply --define substitutions to raw YAML before parsing.
                 // Replaces [KEY] with VALUE everywhere in the file, including
@@ -49,7 +51,7 @@ namespace AlliePack
                     {
                         string token = "[" + kvp.Key + "]";
                         yaml = yaml.Replace(token, kvp.Value);
-                        if (options.Verbose)
+                        if (options.IsVerbose)
                             Console.WriteLine($"  define: {token} -> {kvp.Value}");
                     }
                 }
@@ -68,7 +70,7 @@ namespace AlliePack
                     ? options.Flags.ToList()
                     : config.DefaultActiveFlags;
 
-                if (activeFlags.Any() && options.Verbose)
+                if (activeFlags.Any() && options.IsVerbose)
                     Console.WriteLine($"  active flags: {string.Join(", ", activeFlags)}");
 
                 var resolver = new PathResolver(configPath, config.Aliases, config.Paths);
@@ -80,13 +82,34 @@ namespace AlliePack
 
                 Console.WriteLine("Done.");
             }
+            catch (YamlException ex)
+            {
+                // YamlDotNet exceptions carry precise source location -- always show it.
+                int errLine = ex.Start.Line;
+                int errCol  = ex.Start.Column;
+                Console.WriteLine($"YAML Error at line {errLine}, column {errCol}: {ex.Message}");
+
+                // Print the offending line with a caret so the problem is immediately visible.
+                try
+                {
+                    string[] lines = yaml.Split('\n');
+                    if (errLine >= 1 && errLine <= lines.Length)
+                    {
+                        string offending = lines[errLine - 1].TrimEnd('\r');
+                        Console.WriteLine($"  {offending}");
+                        Console.WriteLine($"  {new string(' ', Math.Max(0, errCol - 1))}^");
+                    }
+                }
+                catch { /* best-effort */ }
+
+                if (options.IsVerbose)
+                    Console.WriteLine(ex.StackTrace);
+            }
             catch (Exception ex)
             {
                 Console.WriteLine($"Fatal Error: {ex.Message}");
-                if (options.Verbose)
-                {
+                if (options.IsVerbose)
                     Console.WriteLine(ex.StackTrace);
-                }
             }
         }
 
