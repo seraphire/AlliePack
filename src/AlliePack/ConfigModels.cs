@@ -382,6 +382,10 @@ namespace AlliePack
         [YamlMember(Alias = "condition")]
         public string? Condition { get; set; }
 
+        // permanent: true -- file survives uninstall (Component:Permanent=yes)
+        [YamlMember(Alias = "permanent")]
+        public bool Permanent { get; set; }
+
         [YamlMember(Alias = "files")]
         public List<FileGroupItem> Files { get; set; } = new();
     }

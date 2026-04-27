@@ -430,8 +430,11 @@ namespace AlliePack
                         var wixFile = new File(filePath);
                         if (!string.IsNullOrEmpty(item.Rename))
                             wixFile.Name = item.Rename;
-                        if (neverOverwrite)
-                            wixFile.AttributesDefinition = "Component:NeverOverwrite=yes";
+                        var attrs = new List<string>();
+                        if (neverOverwrite) attrs.Add("Component:NeverOverwrite=yes");
+                        if (group.Permanent) attrs.Add("Component:Permanent=yes");
+                        if (attrs.Count > 0)
+                            wixFile.AttributesDefinition = string.Join(";", attrs);
                         groupFiles.Add(wixFile);
                     }
                 }
@@ -1063,7 +1066,7 @@ namespace AlliePack
                 string sub = dir.SubPath ?? string.Empty;
                 return string.IsNullOrEmpty(sub) ? basePath : basePath + "\\" + sub;
             }
-            return dir.Path.Resolve(_activeFlags);
+            return dir.Path.Resolve(_activeFlags).Replace('/', '\\');
         }
 
         /// <summary>
