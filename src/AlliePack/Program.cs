@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using CommandLine;
 using YamlDotNet.Core;
 using YamlDotNet.Serialization;
@@ -18,8 +19,20 @@ namespace AlliePack
                 .WithNotParsed(errors => { /* Error handling handled by CommandLineParser */ });
         }
 
+        static string GetVersion()
+        {
+            var asm = Assembly.GetExecutingAssembly();
+            return asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+                       ?.InformationalVersion
+                   ?? asm.GetName().Version?.ToString()
+                   ?? "unknown";
+        }
+
         static void Run(Options options)
         {
+            Console.WriteLine($"AlliePack v{GetVersion()}");
+            Console.WriteLine();
+
             string yaml = string.Empty;   // hoisted so the YamlException catch can show the offending line
             try
             {
@@ -72,7 +85,7 @@ namespace AlliePack
 
                 // defines overlay the paths: block; command-line always wins.
                 var resolver = new PathResolver(configPath, config.Aliases, config.Paths, defines);
-                var solutionResolver = new SolutionResolver(resolver);
+                var solutionResolver = new SolutionResolver(resolver, options.Debug);
                 var builder = new InstallerBuilder(config, resolver, solutionResolver, options, activeFlags);
 
                 Console.WriteLine($"Building MSI for {config.Product.Name} v{config.Product.Version.Resolve(resolver)}...");

@@ -693,15 +693,19 @@ namespace AlliePack
                 if (_options.Debug)
                 {
                     string resolvedSln = _resolver.Resolve(element.Solution!);
-                    Console.WriteLine($"  [debug] solution: {element.Solution}");
-                    Console.WriteLine($"  [debug]       -> {resolvedSln}");
+                    Console.WriteLine($"  [debug] solution:        {element.Solution}");
+                    Console.WriteLine($"  [debug]              ->  {resolvedSln}");
+                    Console.WriteLine($"  [debug]   configuration: {element.Configuration}");
+                    Console.WriteLine($"  [debug]   platform:      {element.Platform}");
+                    if (element.ExcludeProjects.Any())
+                        Console.WriteLine($"  [debug]   excludeProjects: {string.Join(", ", element.ExcludeProjects)}");
+                    if (element.ExcludeFiles.Any())
+                        Console.WriteLine($"  [debug]   excludeFiles:    {string.Join(", ", element.ExcludeFiles)}");
                 }
 
                 var solFiles = _solutionResolver.ResolveSolution(element.Solution ?? "", element.Configuration, element.Platform, element.ExcludeProjects, element.ExcludeFiles);
                 foreach (var f in solFiles)
-                {
                     f.RelativeDestinationPath = Path.Combine(newPath, f.RelativeDestinationPath);
-                }
 
                 Debug($"  solution matched {solFiles.Count} file(s):");
                 foreach (var f in solFiles) Debug($"    {f.SourcePath}");
@@ -713,15 +717,17 @@ namespace AlliePack
                 if (_options.Debug)
                 {
                     string resolvedProj = _resolver.Resolve(element.Project!);
-                    Console.WriteLine($"  [debug] project: {element.Project}");
-                    Console.WriteLine($"  [debug]      -> {resolvedProj}");
+                    Console.WriteLine($"  [debug] project:         {element.Project}");
+                    Console.WriteLine($"  [debug]              ->  {resolvedProj}");
+                    Console.WriteLine($"  [debug]   configuration: {element.Configuration}");
+                    Console.WriteLine($"  [debug]   platform:      {element.Platform}");
+                    if (element.ExcludeFiles.Any())
+                        Console.WriteLine($"  [debug]   excludeFiles:    {string.Join(", ", element.ExcludeFiles)}");
                 }
 
                 var projFiles = _solutionResolver.ResolveProject(element.Project ?? "", element.Configuration, element.Platform, element.ExcludeFiles);
                 foreach (var f in projFiles)
-                {
                     f.RelativeDestinationPath = Path.Combine(newPath, f.RelativeDestinationPath);
-                }
 
                 Debug($"  project matched {projFiles.Count} file(s):");
                 foreach (var f in projFiles) Debug($"    {f.SourcePath}");

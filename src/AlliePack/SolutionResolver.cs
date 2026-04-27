@@ -13,11 +13,15 @@ namespace AlliePack
     public class SolutionResolver
     {
         private readonly PathResolver _pathResolver;
+        private readonly bool _debug;
 
-        public SolutionResolver(PathResolver pathResolver)
+        public SolutionResolver(PathResolver pathResolver, bool debug = false)
         {
             _pathResolver = pathResolver;
+            _debug = debug;
         }
+
+        private void Log(string message) { if (_debug) Console.WriteLine($"  [debug] {message}"); }
 
         public List<ResolvedFile> ResolveSolution(string solutionPath, string configuration, string platform, List<string> excludeProjects, List<string> excludeFiles)
         {
@@ -62,15 +66,21 @@ namespace AlliePack
 
             string outputPath = GetOutputPath(fullPath, configuration, platform);
             if (string.IsNullOrEmpty(outputPath))
-                return results;
-
-            if (!Path.IsPathRooted(outputPath))
             {
-                outputPath = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(fullPath)!, outputPath));
+                Log($"  output dir: (could not determine from project file)");
+                return results;
             }
 
+            if (!Path.IsPathRooted(outputPath))
+                outputPath = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(fullPath)!, outputPath));
+
+            Log($"  output dir: {outputPath}");
+
             if (!Directory.Exists(outputPath))
+            {
+                Log($"  WARNING: output directory does not exist");
                 return results;
+            }
 
             // Collect files with globbing exclusions
             var matcher = new Matcher();
