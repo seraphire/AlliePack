@@ -60,10 +60,13 @@ namespace AlliePack
                 Debug("wix tools: using PATH discovery (WIXSHARP_WIXLOCATION not set)");
             }
 
-            // Tell WixSharp which WiX version to use and where to find it.
-            // This overrides WixSharp's own discovery, which can latch onto a
-            // system-installed WiX 7 even when WiX 5 is first on PATH.
-            WixTools.SetWixVersion(wixLocation ?? Environment.CurrentDirectory, "5.0.2");
+            // Tell WixSharp which WiX version to use.
+            // Must pass Environment.CurrentDirectory (not wixLocation) because WixSharp's
+            // GlobalWixVersion walks upward from CWD looking for .config/dotnet-tools.json.
+            // Writing it into wixLocation (e.g. the dotnet tools dir) puts it somewhere
+            // WixSharp never searches, leaving GlobalWixVersion null and causing wix.tools.csproj
+            // to use version="*" which resolves to WiX 7.
+            WixTools.SetWixVersion(Environment.CurrentDirectory, "5.0.2");
             WixExtension.UI.PreferredVersion   = "5.0.2";
             WixExtension.Util.PreferredVersion = "5.0.2";
 
