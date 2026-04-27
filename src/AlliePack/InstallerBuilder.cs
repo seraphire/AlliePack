@@ -1,12 +1,13 @@
+using Microsoft.Extensions.FileSystemGlobbing;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Xml.Linq;
 using WixSharp;
+using WixSharp.CommonTasks;
 using WixSharp.UI.WPF;
 using YamlDotNet.Serialization;
-using Microsoft.Extensions.FileSystemGlobbing;
 using File = WixSharp.File;
 
 namespace AlliePack
@@ -52,6 +53,7 @@ namespace AlliePack
                 Debug("wix tools: using PATH discovery (WIXSHARP_WIXLOCATION not set)");
             }
 
+            WixTools.SetWixVersion(Environment.CurrentDirectory, "5.0.2");
             WixExtension.UI.PreferredVersion   = "5.0.2";
             WixExtension.Util.PreferredVersion = "5.0.2";
 
