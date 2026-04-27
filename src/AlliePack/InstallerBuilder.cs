@@ -19,6 +19,8 @@ namespace AlliePack
         private readonly Options _options;
         private readonly IReadOnlyList<string> _activeFlags;
 
+        private void Debug(string message) { if (_options.Debug) Console.WriteLine($"  [debug] {message}"); }
+
         public InstallerBuilder(AlliePackConfig config, PathResolver resolver, SolutionResolver solutionResolver, Options options, IReadOnlyList<string> activeFlags)
         {
             _config = config;
@@ -42,12 +44,34 @@ namespace AlliePack
                 // Prepend to PATH so this wix.exe is found before any system-installed version.
                 string currentPath = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
                 Environment.SetEnvironmentVariable("PATH", wixLocation + Path.PathSeparator + currentPath);
-                if (_options.Verbose)
+                if (_options.IsVerbose)
                     Console.WriteLine($"  wix tools: {wixLocation}");
+            }
+            else
+            {
+                Debug("wix tools: using PATH discovery (WIXSHARP_WIXLOCATION not set)");
             }
 
             WixExtension.UI.PreferredVersion   = "5.0.2";
             WixExtension.Util.PreferredVersion = "5.0.2";
+
+            // Debug: dump resolved config
+            if (_options.Debug)
+            {
+                string resolvedVer = _config.Product.Version.Resolve(_resolver);
+                Console.WriteLine($"  [debug] product.name       : {_config.Product.Name}");
+                Console.WriteLine($"  [debug] product.version    : {resolvedVer}");
+                Console.WriteLine($"  [debug] product.platform   : {_config.Product.Platform}");
+                Console.WriteLine($"  [debug] product.installScope: {_config.Product.InstallScope.Resolve(_activeFlags)}");
+                Console.WriteLine($"  [debug] product.installDir : {_config.Product.InstallDir?.Resolve(_activeFlags) ?? "(default)"}");
+                Console.WriteLine($"  [debug] product.upgradeCode: {_config.Product.UpgradeCode}");
+                Console.WriteLine($"  [debug] aliases ({_config.Aliases.Count}):");
+                foreach (var a in _config.Aliases)
+                    Console.WriteLine($"  [debug]   {a.Key}: -> {_resolver.Resolve(a.Value)}");
+                Console.WriteLine($"  [debug] active flags: [{string.Join(", ", _activeFlags)}]");
+                Console.WriteLine($"  [debug] yaml dir    : {_resolver.WorkingDirectory}");
+            }
+
             var allFiles = new List<ResolvedFile>();
             foreach (var element in _config.Structure)
             {
@@ -56,6 +80,16 @@ namespace AlliePack
 
             // Deduplicate
             var uniqueFiles = DeduplicateFiles(allFiles);
+
+            if (_options.Debug)
+            {
+                Console.WriteLine($"  [debug] files resolved: {uniqueFiles.Count}");
+                foreach (var f in uniqueFiles)
+                    Console.WriteLine($"  [debug]   {f.SourcePath}");
+                Console.WriteLine($"  [debug]   -> destination paths:");
+                foreach (var f in uniqueFiles)
+                    Console.WriteLine($"  [debug]   {f.RelativeDestinationPath}");
+            }
 
             var entities = new List<WixEntity>();
 
@@ -270,6 +304,12 @@ namespace AlliePack
                 else
                 {
                     Console.WriteLine($"Warning: Shortcut target not found: {s.Target} (Resolved to: {targetPath})");
+                    if (_options.Debug)
+                    {
+                        Console.WriteLine($"  [debug] fileMap contains {fileMap.Count} entries:");
+                        foreach (var key in fileMap.Keys)
+                            Console.WriteLine($"  [debug]   {key}");
+                    }
                 }
             }
 
@@ -332,7 +372,7 @@ namespace AlliePack
                     .Concat(new IGenericEntity[] { si })
                     .ToArray();
 
-                if (_options.Verbose)
+                if (_options.IsVerbose)
                     Console.WriteLine($"Service '{svc.Name}' -> {svc.Executable}");
             }
 
@@ -387,7 +427,7 @@ namespace AlliePack
                 leafDir.Files = groupFiles.ToArray();
                 entities.Add(groupRootDir);
 
-                if (_options.Verbose)
+                if (_options.IsVerbose)
                     Console.WriteLine($"Group '{group.Id}': {groupFiles.Count} file(s) -> {destPath}");
             }
 
@@ -466,7 +506,7 @@ namespace AlliePack
                             else continue;
 
                             document.Root!.Add(xml);
-                            if (_options.Verbose)
+                            if (_options.IsVerbose)
                                 Console.WriteLine($"  wix fragment injected: {xml.Name.LocalName}");
                         }
                         catch (Exception ex)
@@ -520,7 +560,7 @@ namespace AlliePack
                     // If they are different, we'll take the one from the most recent project (last one in the list)
                     // or maybe we should keep both? No, they go to the same destination.
                     // We'll replace and log it if verbose.
-                    if (_options.Verbose)
+                    if (_options.IsVerbose)
                     {
                         Console.WriteLine($"Warning: Different files found for '{key}'. Keeping '{file.SourcePath}'.");
                     }

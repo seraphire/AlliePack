@@ -41,5 +41,14 @@ namespace AlliePack
             HelpText = "Preserve the generated .wxs source file after building. " +
                        "Useful for debugging or auditing the WiX XML.")]
         public bool KeepWxs { get; set; }
+
+        [Option("debug", Required = false,
+            HelpText = "Enable diagnostic output: resolved config values, alias expansions, " +
+                       "per-file source-to-destination mappings, shortcut resolution, and WiX tool location. " +
+                       "Implies --verbose.")]
+        public bool Debug { get; set; }
+
+        /// <summary>True when either --verbose or --debug is set.</summary>
+        public bool IsVerbose => Verbose || Debug;
     }
 }
