@@ -240,6 +240,12 @@ namespace AlliePack
         [YamlMember(Alias = "aliases")]
         public Dictionary<string, string> Aliases { get; set; } = new();
 
+        // Named build-machine paths, usable as [name] tokens anywhere in the config.
+        // Values may contain built-in tokens ([GitRoot], [YamlDir], [CurrentDir]).
+        // Any entry can be overridden on the command line with --define name=value.
+        [YamlMember(Alias = "paths")]
+        public Dictionary<string, string> Paths { get; set; } = new();
+
         [YamlMember(Alias = "structure")]
         public List<StructureElement> Structure { get; set; } = new();
 

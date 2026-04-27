@@ -68,6 +68,12 @@ namespace AlliePack
                 Console.WriteLine($"  [debug] aliases ({_config.Aliases.Count}):");
                 foreach (var a in _config.Aliases)
                     Console.WriteLine($"  [debug]   {a.Key}: -> {_resolver.Resolve(a.Value)}");
+                if (_config.Paths.Count > 0)
+                {
+                    Console.WriteLine($"  [debug] paths ({_config.Paths.Count}):");
+                    foreach (var p in _config.Paths)
+                        Console.WriteLine($"  [debug]   [{p.Key}] = {p.Value} -> {_resolver.Resolve(p.Value)}");
+                }
                 Console.WriteLine($"  [debug] active flags: [{string.Join(", ", _activeFlags)}]");
                 Console.WriteLine($"  [debug] yaml dir    : {_resolver.WorkingDirectory}");
             }
@@ -615,6 +621,13 @@ namespace AlliePack
 
             if (!string.IsNullOrEmpty(element.Source))
             {
+                if (_options.Debug)
+                {
+                    string resolvedSource = _resolver.Resolve(element.Source!);
+                    Console.WriteLine($"  [debug] source: {element.Source}");
+                    Console.WriteLine($"  [debug]      -> {resolvedSource}");
+                }
+
                 var filesWithPaths = _resolver.ResolveGlobWithPaths(element.Source ?? "");
 
                 // Exclusions

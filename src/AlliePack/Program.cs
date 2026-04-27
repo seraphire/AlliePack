@@ -71,7 +71,7 @@ namespace AlliePack
                 if (activeFlags.Any() && options.Verbose)
                     Console.WriteLine($"  active flags: {string.Join(", ", activeFlags)}");
 
-                var resolver = new PathResolver(configPath, config.Aliases);
+                var resolver = new PathResolver(configPath, config.Aliases, config.Paths);
                 var solutionResolver = new SolutionResolver(resolver);
                 var builder = new InstallerBuilder(config, resolver, solutionResolver, options, activeFlags);
 
