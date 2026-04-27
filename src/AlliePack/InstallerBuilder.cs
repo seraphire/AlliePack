@@ -33,12 +33,19 @@ namespace AlliePack
 
         public void Build()
         {
-            // Resolve WiX tool location: YAML > env var > WixSharp auto-discovery.
-            // Allows pinning to a specific WiX version in CI environments where
-            // multiple versions may be installed (e.g. Azure with WiX 7 pre-installed).
-            string? wixLocation = _config.WixToolsPath != null
-                ? _resolver.Resolve(_config.WixToolsPath)
-                : Environment.GetEnvironmentVariable("WIXSHARP_WIXLOCATION");
+            // Resolve WiX tool location: YAML wixToolsPath > WIXSHARP_WIXLOCATION env var > WixSharp discovery.
+            // If wixToolsPath contains an unresolved token (e.g. "[WixTools]" with no --define
+            // supplied), treat it as absent so the env-var fallback can still apply.
+            string? wixLocation = null;
+            if (_config.WixToolsPath != null)
+            {
+                string resolved = _resolver.Resolve(_config.WixToolsPath);
+                if (!resolved.Contains('['))          // fully resolved -- no remaining tokens
+                    wixLocation = resolved;
+                else
+                    Debug($"wixToolsPath token not resolved: {resolved} -- falling back to env var");
+            }
+            wixLocation ??= Environment.GetEnvironmentVariable("WIXSHARP_WIXLOCATION");
 
             if (!string.IsNullOrEmpty(wixLocation))
             {
@@ -53,7 +60,10 @@ namespace AlliePack
                 Debug("wix tools: using PATH discovery (WIXSHARP_WIXLOCATION not set)");
             }
 
-            WixTools.SetWixVersion(Environment.CurrentDirectory, "5.0.2");
+            // Tell WixSharp which WiX version to use and where to find it.
+            // This overrides WixSharp's own discovery, which can latch onto a
+            // system-installed WiX 7 even when WiX 5 is first on PATH.
+            WixTools.SetWixVersion(wixLocation ?? Environment.CurrentDirectory, "5.0.2");
             WixExtension.UI.PreferredVersion   = "5.0.2";
             WixExtension.Util.PreferredVersion = "5.0.2";
 
