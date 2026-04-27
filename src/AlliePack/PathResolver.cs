@@ -14,12 +14,25 @@ namespace AlliePack
 
         public string WorkingDirectory => _gitRoot ?? _yamlDir;
 
-        public PathResolver(string yamlFilePath, Dictionary<string, string> aliases, Dictionary<string, string> paths)
+        /// <param name="defines">
+        /// Tokens from --define KEY=VALUE.  These are merged over the paths: block
+        /// so command-line overrides take priority.  Values are used as-is (no
+        /// built-in token expansion) so Windows backslash paths are safe.
+        /// </param>
+        public PathResolver(string yamlFilePath, Dictionary<string, string> aliases,
+                            Dictionary<string, string> paths,
+                            Dictionary<string, string>? defines = null)
         {
             _yamlDir = Path.GetDirectoryName(Path.GetFullPath(yamlFilePath)) ?? Environment.CurrentDirectory;
             _gitRoot = FindGitRoot(_yamlDir);
             _aliases = aliases;
-            _paths = paths;
+
+            // Merge paths: entries then overlay --define entries (defines win on conflict).
+            var merged = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var p in paths)   merged[p.Key] = p.Value;
+            if (defines != null)
+                foreach (var d in defines) merged[d.Key] = d.Value;
+            _paths = merged;
         }
 
         /// <summary>

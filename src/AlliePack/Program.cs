@@ -41,46 +41,11 @@ namespace AlliePack
                 Console.WriteLine($"Reading config: {configPath}...");
                 yaml = File.ReadAllText(configPath);
 
-                // Apply --define substitutions to raw YAML before parsing.
-                // Replaces [KEY] with VALUE everywhere in the file, including
-                // product fields like version, name, and path tokens.
-                var defines = ParseDefines(options.Defines);
-                if (defines.Count > 0)
-                {
-                    foreach (var kvp in defines)
-                    {
-                        string token = "[" + kvp.Key + "]";
-
-                        // Warn when a backslash value is substituted inside a double-quoted
-                        // YAML scalar: YAML treats \x as an escape sequence, so \1, \s, etc.
-                        // will cause a parse error.  Forward slashes always work on Windows.
-                        if (kvp.Value.Contains('\\'))
-                        {
-                            // Check if the token appears inside a double-quoted YAML string.
-                            int idx = yaml.IndexOf(token, StringComparison.Ordinal);
-                            while (idx >= 0)
-                            {
-                                // Walk backward to find the nearest unescaped quote on the same line.
-                                int lineStart = yaml.LastIndexOf('\n', idx) + 1;
-                                string before = yaml.Substring(lineStart, idx - lineStart);
-                                int dqCount = before.Split('"').Length - 1;
-                                if (dqCount % 2 == 1)  // odd number -> we are inside a double-quoted scalar
-                                {
-                                    Console.WriteLine($"Warning: --define {kvp.Key} value contains backslashes and is substituted inside a double-quoted YAML string.");
-                                    Console.WriteLine($"         Use forward slashes instead to avoid YAML parse errors (forward slashes work as path separators on Windows).");
-                                    Console.WriteLine($"         Value: {kvp.Value}");
-                                    break;
-                                }
-                                idx = yaml.IndexOf(token, idx + 1, StringComparison.Ordinal);
-                            }
-                        }
-
-                        yaml = yaml.Replace(token, kvp.Value);
-                        if (options.IsVerbose)
-                            Console.WriteLine($"  define: {token} -> {kvp.Value}");
-                    }
-                }
-
+                // Parse YAML first -- no pre-processing.
+                // --define values are folded into PathResolver as named tokens so they
+                // are substituted at resolution time, not in raw YAML text.  This means
+                // Windows backslash paths from CI variables (e.g. $(Build.SourcesDirectory))
+                // are never seen by the YAML parser and cannot cause escape-sequence errors.
                 var deserializer = new DeserializerBuilder()
                     .WithNamingConvention(CamelCaseNamingConvention.Instance)
                     .WithTypeConverter(new ConditionalStringConverter())
@@ -88,6 +53,13 @@ namespace AlliePack
                     .Build();
 
                 var config = deserializer.Deserialize<AlliePackConfig>(yaml);
+
+                var defines = ParseDefines(options.Defines);
+                if (defines.Count > 0 && options.IsVerbose)
+                {
+                    foreach (var kvp in defines)
+                        Console.WriteLine($"  define: [{kvp.Key}] -> {kvp.Value}");
+                }
 
                 // Resolve active release flags: --flag args take precedence over
                 // defaultActiveFlags in the config; either may be empty.
@@ -98,7 +70,8 @@ namespace AlliePack
                 if (activeFlags.Any() && options.IsVerbose)
                     Console.WriteLine($"  active flags: {string.Join(", ", activeFlags)}");
 
-                var resolver = new PathResolver(configPath, config.Aliases, config.Paths);
+                // defines overlay the paths: block; command-line always wins.
+                var resolver = new PathResolver(configPath, config.Aliases, config.Paths, defines);
                 var solutionResolver = new SolutionResolver(resolver);
                 var builder = new InstallerBuilder(config, resolver, solutionResolver, options, activeFlags);
 
