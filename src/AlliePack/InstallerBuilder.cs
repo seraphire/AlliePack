@@ -73,6 +73,12 @@ namespace AlliePack
             // Debug: dump resolved config
             if (_options.Debug)
             {
+                Console.WriteLine($"  [debug] Wix Settings:");
+                Console.WriteLine($"  [debug] WixTools.WixSharpToolDir      : {WixTools.WixSharpToolDir}");
+                Console.WriteLine($"  [debug] WixTools.WixExtensionsDir     : {WixTools.WixExtensionsDir}");
+                Console.WriteLine($"  [debug] WixTools.DtfWindowsInstaller  : {WixTools.DtfWindowsInstaller}");
+                Console.WriteLine();
+
                 string resolvedVer = _config.Product.Version.Resolve(_resolver);
                 Console.WriteLine($"  [debug] product.name       : {_config.Product.Name}");
                 Console.WriteLine($"  [debug] product.version    : {resolvedVer}");
