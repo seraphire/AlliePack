@@ -50,6 +50,31 @@ namespace AlliePack
                     foreach (var kvp in defines)
                     {
                         string token = "[" + kvp.Key + "]";
+
+                        // Warn when a backslash value is substituted inside a double-quoted
+                        // YAML scalar: YAML treats \x as an escape sequence, so \1, \s, etc.
+                        // will cause a parse error.  Forward slashes always work on Windows.
+                        if (kvp.Value.Contains('\\'))
+                        {
+                            // Check if the token appears inside a double-quoted YAML string.
+                            int idx = yaml.IndexOf(token, StringComparison.Ordinal);
+                            while (idx >= 0)
+                            {
+                                // Walk backward to find the nearest unescaped quote on the same line.
+                                int lineStart = yaml.LastIndexOf('\n', idx) + 1;
+                                string before = yaml.Substring(lineStart, idx - lineStart);
+                                int dqCount = before.Split('"').Length - 1;
+                                if (dqCount % 2 == 1)  // odd number -> we are inside a double-quoted scalar
+                                {
+                                    Console.WriteLine($"Warning: --define {kvp.Key} value contains backslashes and is substituted inside a double-quoted YAML string.");
+                                    Console.WriteLine($"         Use forward slashes instead to avoid YAML parse errors (forward slashes work as path separators on Windows).");
+                                    Console.WriteLine($"         Value: {kvp.Value}");
+                                    break;
+                                }
+                                idx = yaml.IndexOf(token, idx + 1, StringComparison.Ordinal);
+                            }
+                        }
+
                         yaml = yaml.Replace(token, kvp.Value);
                         if (options.IsVerbose)
                             Console.WriteLine($"  define: {token} -> {kvp.Value}");
