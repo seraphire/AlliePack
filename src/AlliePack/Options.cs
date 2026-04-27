@@ -36,5 +36,10 @@ namespace AlliePack
                        "Values: perUser, perMachine.  " +
                        "Ignored when installScope is perUser or perMachine.")]
         public string? Scope { get; set; }
+
+        [Option("keep-wxs", Required = false,
+            HelpText = "Preserve the generated .wxs source file after building. " +
+                       "Useful for debugging or auditing the WiX XML.")]
+        public bool KeepWxs { get; set; }
     }
 }

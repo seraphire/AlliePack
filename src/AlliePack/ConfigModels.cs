@@ -265,6 +265,12 @@ namespace AlliePack
         [YamlMember(Alias = "wix")]
         public WixConfig? Wix { get; set; }
 
+        // Optional: explicit path to the directory containing wix.exe.
+        // Use when multiple WiX versions are installed and you need to pin one.
+        // Also honoured via the WIXSHARP_WIXLOCATION environment variable.
+        [YamlMember(Alias = "wixToolsPath")]
+        public string? WixToolsPath { get; set; }
+
         // GAP-5: release flags declared in the config file
         [YamlMember(Alias = "releaseFlags")]
         public List<string> ReleaseFlags { get; set; } = new();

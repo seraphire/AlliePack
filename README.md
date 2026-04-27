@@ -1,6 +1,6 @@
 # AlliePack
 
-AlliePack is a YAML-driven MSI installer builder built on **WixSharp** and **WiX v4**. Define your installer in a human-readable `allie-pack.yaml` file instead of writing complex WiX XML or C# scripts.
+AlliePack is a YAML-driven MSI installer builder built on **WixSharp** and **WiX v5**. Define your installer in a human-readable `allie-pack.yaml` file instead of writing complex WiX XML or C# scripts.
 
 ## Features
 
@@ -11,22 +11,27 @@ AlliePack is a YAML-driven MSI installer builder built on **WixSharp** and **WiX
 - **Shortcut creation** for Start Menu, Desktop, or any WiX folder property
 - **WPF managed UI** with standard installer dialogs (Welcome, InstallDir, Progress, Exit); optional license agreement dialog
 - **Token substitution** via `--define KEY=VALUE` for injecting version numbers, paths, or any value into YAML at build time
+- **Flexible versioning** -- literal string, PE file version (FileVersionInfo), or derived from git tags
 - **Dry-run / report mode** to preview MSI contents without building
 - **Platform support**: x86, x64, arm64
-- **Install scope**: perMachine or perUser
+- **Install scope**: perMachine, perUser, or both (with flag-driven selection)
+- **Registry keys and values**
+- **Environment variables** (set/remove on install/uninstall)
+- **Windows services** (install, start, stop, remove)
+- **Release flags** for conditional configuration (perUser vs. perMachine builds, etc.)
 
 ## Prerequisites
 
 - .NET Framework 4.8.1
-- WiX Toolset v4 installed as a dotnet tool:
+- WiX Toolset v5 installed as a dotnet tool:
   ```
-  dotnet tool install --global wix
+  dotnet tool install --global wix --version 5.*
   ```
 
 ## Usage
 
 ```
-AlliePack.exe [config]  [options]
+AlliePack.exe [config] [options]
 
 Arguments:
   config                    Path to a config file, or a directory containing
@@ -36,25 +41,49 @@ Arguments:
 Options:
   -r, --report              Preview resolved files without building the MSI
   -o, --output <path>       Output path for the generated MSI
-  -D, --define KEY=VALUE    Substitute [KEY] tokens in YAML before parsing
   -v, --verbose             Enable verbose output
+  -D, --define KEY=VALUE    Substitute [KEY] tokens in YAML before parsing.
+                            Repeatable: -D VERSION=2.1.0 -D EDITION=Pro
+      --flag <name>         Active release flag. Selects values from conditional
+                            maps in the config. Falls back to defaultActiveFlags,
+                            then to unconditional values.
+      --scope <value>       Override install scope for 'installScope: both'
+                            configs. Values: perUser, perMachine.
+      --keep-wxs            Preserve the generated .wxs source file after
+                            building. Useful for debugging or CI artifacts.
 ```
 
 ### Examples
 
 ```
-# Build the MSI
+# Build from allie-pack.yaml in the current directory
+AlliePack.exe
+
+# Build from an explicit config file
 AlliePack.exe allie-pack.yaml
 
 # Preview what will be in the MSI without building
 AlliePack.exe allie-pack.yaml --report
 
-# Inject version and build number at build time
-AlliePack.exe allie-pack.yaml -D VERSION=2.1.0 -D BUILD=42
+# Inject a version at build time
+AlliePack.exe allie-pack.yaml -D VERSION=2.1.0
 
 # Write MSI to a specific location
 AlliePack.exe allie-pack.yaml --output C:\builds\MyApp-2.1.0.msi
+
+# Build a per-machine variant using release flags
+AlliePack.exe allie-pack.yaml --flag PerMachine
+
+# Retain the generated WiX source for inspection
+AlliePack.exe allie-pack.yaml --keep-wxs
 ```
+
+## Environment Variables
+
+| Variable | Purpose |
+|---|---|
+| `WIXSHARP_WIXLOCATION` | Path to the directory containing `wix.exe`. Overrides PATH discovery. Use in CI environments where multiple WiX versions are installed. |
+| `ALLIEPAK_KEEP_WXS` | Set to any value to preserve the generated `.wxs` file after building. Equivalent to `--keep-wxs`. |
 
 ## Config File Naming
 
@@ -73,26 +102,49 @@ When no config argument is given, AlliePack looks for `allie-pack.yaml` in the c
 product:
   name: "My App"
   manufacturer: "My Company"
-  version: "1.0.0.0"         # Four-part version: Major.Minor.Build.Revision
+  version: "1.0.0.0"         # See version sourcing options below
   description: "My App installer"
   upgradeCode: "YOUR-GUID"   # Fixed GUID -- changing this breaks upgrades
-  installScope: "perMachine" # perMachine or perUser
+  installScope: "perMachine" # perMachine, perUser, or both
   platform: "x64"            # x86 (default), x64, arm64
   installDir: "[ProgramFiles]\\MyCompany\\MyApp"  # optional custom install path
   licenseFile: "license.rtf" # optional; adds license agreement dialog
 ```
 
+#### Version sourcing
+
+**Literal string:**
+```yaml
+version: "1.0.0.0"
+```
+
+**From a PE file (FileVersionInfo):**
+```yaml
+version:
+  file: "bin:MyApp.exe"
+  source: "file-version"     # or "product-version"
+```
+
+**From git tags** (derives `Major.Minor.Patch.CommitCount` from the nearest tag):
+```yaml
+version:
+  source: "git-tag"
+  tagPrefix: "v"             # optional; defaults to "v"
+```
+
+With git-tag sourcing, a tag of `v1.2.3` with 7 commits since the tag produces version `1.2.3.7`. If no matching tag exists, falls back to `0.0.0.<total-commits>`.
+
 ### `aliases`
 
-Aliases are short names for paths, used in `source:` fields with the `alias:path` syntax.
+Aliases are short names for paths, used in `source:` fields with the `alias:path` syntax. Token substitution applies inside alias values.
 
 ```yaml
 aliases:
-  bin: "src/MyApp/bin/Release/net481"
+  bin: "[GitRoot]/src/MyApp/bin/Release/net481"
   assets: "resources/dist"
 ```
 
-Built-in tokens that can appear anywhere in path values:
+Built-in path tokens:
 
 | Token | Resolves to |
 |---|---|
@@ -102,7 +154,7 @@ Built-in tokens that can appear anywhere in path values:
 
 ### `structure`
 
-Defines the folder and file hierarchy that will be installed. Elements can nest arbitrarily.
+Defines the folder and file hierarchy that will be installed.
 
 ```yaml
 structure:
@@ -128,8 +180,6 @@ structure:
       # Or from a single project
       - project: "src/MyApp.Core/MyApp.Core.csproj"
         configuration: "Release"
-        excludeFiles:
-          - "*.resources.dll"
 
       # Nested folders
       - folder: "Data"
@@ -139,20 +189,21 @@ structure:
 
 **Source field syntax:**
 - `alias:pattern` -- files matching `pattern` under the alias path
-- `[Token]\path\pattern` -- token-based path with optional glob
+- `[Token]/path/pattern` -- token-based path with optional glob
 - Relative paths are resolved from the YAML file's directory
+- `**` globs preserve subdirectory structure
 
 ### `shortcuts`
 
 ```yaml
 shortcuts:
   - name: "My App"
-    target: "[INSTALLDIR]\\App\\MyApp.exe"
+    target: "[INSTALLDIR]\\MyApp.exe"
     description: "Launch My App"
     folder: "[ProgramMenuFolder]"
 
   - name: "My App"
-    target: "[INSTALLDIR]\\App\\MyApp.exe"
+    target: "[INSTALLDIR]\\MyApp.exe"
     folder: "[Desktop]"
 ```
 
@@ -160,36 +211,11 @@ shortcuts:
 
 | YAML value | Location |
 |---|---|
-| `[ProgramMenuFolder]` | Start Menu\Programs |
-| `[Desktop]` or `[DesktopFolder]` | Desktop |
-
-### `directories` and `groups`
-
-`directories` defines named locations outside `INSTALLDIR`. `groups` installs files to those locations.
-
-```yaml
-directories:
-  - id: PSMODDIR
-    path: "[PersonalFolder]\\WindowsPowerShell\\Modules\\MyApp"
-
-  - id: CONFIGDIR
-    path: "[AppDataFolder]\\MyCompany\\MyApp"
-
-groups:
-  - id: PsModule
-    destinationDir: PSMODDIR
-    files:
-      - source: "scripts:MyApp.psm1"
-      - source: "scripts:MyApp.psd1"
-
-  - id: DefaultConfig
-    destinationDir: CONFIGDIR
-    files:
-      - source: "installer/myapp.config.ini"
-        rename: "config.ini"
-```
-
-Standard WiX folder properties are supported as path roots: `[PersonalFolder]`, `[AppDataFolder]`, `[CommonAppDataFolder]`, `[LocalAppDataFolder]`, `[ProgramFiles]`, etc.
+| `[ProgramMenuFolder]` | Start Menu\Programs (per-user) |
+| `[CommonProgramMenuFolder]` | Start Menu\Programs (all users) |
+| `[Desktop]` / `[DesktopFolder]` | Desktop (per-user) |
+| `[CommonDesktopFolder]` | Desktop (all users) |
+| `startmenu` / `desktop` / `startup` | Scope-aware alias (resolves per- or all-users based on installScope) |
 
 ### `environment`
 
@@ -201,9 +227,90 @@ environment:
     value: "[INSTALLDIR]"
     scope: user       # user (default) or machine
 
-  - name: "MYAPP_MODE"
-    value: "production"
+  - name: "PATH"
+    value: "[INSTALLDIR]\\bin"
     scope: machine
+```
+
+### `registry`
+
+```yaml
+registry:
+  - root: "HKLM"
+    key: "SOFTWARE\\MyCompany\\MyApp"
+    name: "InstallDir"
+    value: "[INSTALLDIR]"
+    type: string      # string (default), expandString, multiString, dword, qword, binary
+    win64: true       # optional; defaults to platform setting
+```
+
+### `services`
+
+```yaml
+services:
+  - name: "MyAppService"
+    displayName: "My App Service"
+    description: "Background service for My App"
+    executable: "MyAppService.exe"
+    start: auto       # auto, manual, disabled
+    account: "LocalSystem"
+    onFailure:
+      first: restart
+      second: restart
+      third: none
+      restartDelaySeconds: 60
+      resetAfterDays: 1
+```
+
+### `directories` and `groups`
+
+Install files to locations outside `INSTALLDIR`.
+
+```yaml
+directories:
+  - id: PSMODDIR
+    path: "[PersonalFolder]\\WindowsPowerShell\\Modules\\MyApp"
+
+  - id: CONFIGDIR
+    type: config      # config, localdata, desktop, startmenu, startup,
+    subPath: "MyCompany\\MyApp"   # psmodules51, psmodules7
+
+groups:
+  - id: PsModule
+    destinationDir: PSMODDIR
+    files:
+      - source: "scripts:MyApp.psm1"
+
+  - id: DefaultConfig
+    destinationDir: CONFIGDIR
+    condition: notExists   # only install if file is not already present
+    files:
+      - source: "installer/myapp.config.ini"
+        rename: "config.ini"
+```
+
+### `wixToolsPath`
+
+Pin AlliePack to a specific WiX installation, bypassing PATH discovery. Useful in CI environments where multiple WiX versions are installed.
+
+```yaml
+wixToolsPath: "C:/tools/wix5/bin"
+```
+
+Can also be set via the `WIXSHARP_WIXLOCATION` environment variable (takes effect when `wixToolsPath` is not set in the config).
+
+### `wix`
+
+Raw WiX XML escape hatch for anything AlliePack doesn't cover natively.
+
+```yaml
+wix:
+  fragments:
+    - inline: |
+        <Fragment>
+          <Property Id="MYKEY" Value="1" />
+        </Fragment>
+    - file: "installer/extra.wxs"
 ```
 
 ## Project Structure
@@ -230,14 +337,16 @@ src/AlliePack/
 - [x] `--define` token substitution
 - [x] x64 / arm64 platform support
 - [x] Recursive `**` glob source (preserves subdirectory structure)
-- [ ] Registry keys and values
+- [x] Registry keys and values
 - [x] Environment variables
+- [x] Windows services
 - [x] Named directories and file groups (install outside INSTALLDIR)
-- [ ] Optional installer features (component selection)
 - [x] Release flags and conditional inclusion (`--flag PerUser` / `--flag PerMachine`)
 - [x] `condition: notExists` -- install config files on first install only
+- [x] Flexible version sourcing (literal, file, git-tag)
+- [x] Raw WiX XML escape hatch (`wix.fragments`)
+- [ ] Optional installer features (component selection)
 - [ ] Modular YAML includes
-- [ ] Variable substitution within YAML
 
 ## License
 

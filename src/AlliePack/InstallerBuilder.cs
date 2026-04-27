@@ -30,6 +30,22 @@ namespace AlliePack
 
         public void Build()
         {
+            // Resolve WiX tool location: YAML > env var > WixSharp auto-discovery.
+            // Allows pinning to a specific WiX version in CI environments where
+            // multiple versions may be installed (e.g. Azure with WiX 7 pre-installed).
+            string? wixLocation = _config.WixToolsPath != null
+                ? _resolver.Resolve(_config.WixToolsPath)
+                : Environment.GetEnvironmentVariable("WIXSHARP_WIXLOCATION");
+
+            if (!string.IsNullOrEmpty(wixLocation))
+            {
+                // Prepend to PATH so this wix.exe is found before any system-installed version.
+                string currentPath = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+                Environment.SetEnvironmentVariable("PATH", wixLocation + Path.PathSeparator + currentPath);
+                if (_options.Verbose)
+                    Console.WriteLine($"  wix tools: {wixLocation}");
+            }
+
             WixExtension.UI.PreferredVersion   = "5.0.2";
             WixExtension.Util.PreferredVersion = "5.0.2";
             var allFiles = new List<ResolvedFile>();
@@ -476,6 +492,10 @@ namespace AlliePack
                     project.OutDir      = outDir;
                     project.OutFileName = outName;
                 }
+
+                if (_options.KeepWxs || Environment.GetEnvironmentVariable("ALLIEPAK_KEEP_WXS") != null)
+                    project.PreserveTempFiles = true;
+
                 project.BuildMsi();
             }
         }
