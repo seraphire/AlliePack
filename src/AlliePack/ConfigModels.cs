@@ -586,6 +586,13 @@ namespace AlliePack
         [YamlMember(Alias = "excludeFiles")]
         public List<string> ExcludeFiles { get; set; } = new();
 
+        // What to do when a source/project/solution element resolves to zero files.
+        //   warn   -- print a warning and continue (default)
+        //   error  -- abort the build with an error
+        //   ignore -- silently skip
+        [YamlMember(Alias = "onEmpty")]
+        public string OnEmpty { get; set; } = "warn";
+
         [YamlMember(Alias = "contents")]
         public List<StructureElement>? Contents { get; set; }
     }

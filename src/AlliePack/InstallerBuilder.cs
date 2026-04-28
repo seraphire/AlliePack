@@ -625,6 +625,28 @@ namespace AlliePack
             return true;
         }
 
+        /// <summary>
+        /// Applies the element's onEmpty policy after a source/project/solution resolves to
+        /// zero files.  warn (default) prints a message; error throws; ignore is silent.
+        /// </summary>
+        private void ApplyOnEmptyPolicy(StructureElement element, string label)
+        {
+            switch (element.OnEmpty.ToLowerInvariant())
+            {
+                case "ignore":
+                    return;
+                case "error":
+                    throw new InvalidOperationException(
+                        $"No files matched for {label}. " +
+                        $"Set onEmpty: warn or onEmpty: ignore to suppress this error.");
+                default: // "warn" and anything unrecognised
+                    if (!element.OnEmpty.Equals("warn", StringComparison.OrdinalIgnoreCase))
+                        Console.WriteLine($"Warning: Unknown onEmpty value '{element.OnEmpty}'; treating as 'warn'.");
+                    Console.WriteLine($"Warning: No files matched for {label}.");
+                    break;
+            }
+        }
+
         private List<ResolvedFile> ProcessElement(StructureElement element, string currentPath = "")
         {
             var result = new List<ResolvedFile>();
@@ -673,6 +695,7 @@ namespace AlliePack
                 {
                     if (!string.IsNullOrEmpty(element.Source) && !element.Source!.Contains("*") && !element.Source.Contains("?"))
                     {
+                        // Non-glob single file reference — add directly (may not exist yet).
                         string sourcePath = _resolver.Resolve(element.Source);
                         Debug($"  source file: {sourcePath}");
                         result.Add(new ResolvedFile {
@@ -683,6 +706,7 @@ namespace AlliePack
                     else
                     {
                         Debug($"  source matched 0 files (glob returned nothing)");
+                        ApplyOnEmptyPolicy(element, $"source: {element.Source}");
                     }
                 }
                 else
@@ -722,6 +746,9 @@ namespace AlliePack
                 Debug($"  solution matched {solFiles.Count} file(s):");
                 foreach (var f in solFiles) Debug($"    {f.SourcePath}");
 
+                if (solFiles.Count == 0)
+                    ApplyOnEmptyPolicy(element, $"solution: {element.Solution}");
+
                 result.AddRange(solFiles);
             }
             else if (!string.IsNullOrEmpty(element.Project))
@@ -743,6 +770,9 @@ namespace AlliePack
 
                 Debug($"  project matched {projFiles.Count} file(s):");
                 foreach (var f in projFiles) Debug($"    {f.SourcePath}");
+
+                if (projFiles.Count == 0)
+                    ApplyOnEmptyPolicy(element, $"project: {element.Project}");
 
                 result.AddRange(projFiles);
             }
