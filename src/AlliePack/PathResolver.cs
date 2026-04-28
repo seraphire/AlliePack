@@ -10,9 +10,15 @@ namespace AlliePack
         private readonly string _yamlDir;
         private readonly string? _gitRoot;
         private readonly Dictionary<string, string> _aliases;
-        private readonly Dictionary<string, string> _paths;
 
         public string WorkingDirectory => _gitRoot ?? _yamlDir;
+
+        /// <summary>
+        /// Plain token substitution without path normalization.
+        /// Use this for non-path string fields (e.g. MSBuild configuration,
+        /// platform) where Path.GetFullPath would produce wrong results.
+        /// </summary>
+        public TokenSubstitutor Tokens { get; }
 
         /// <param name="defines">
         /// Tokens from --define KEY=VALUE.  These are merged over the paths: block
@@ -32,41 +38,13 @@ namespace AlliePack
             foreach (var p in paths)   merged[p.Key] = p.Value;
             if (defines != null)
                 foreach (var d in defines) merged[d.Key] = d.Value;
-            _paths = merged;
-        }
 
-        /// <summary>
-        /// Applies built-in tokens only ([YamlDir], [CurrentDir], [GitRoot]).
-        /// Used when resolving paths: values so they can reference built-ins
-        /// without creating circular dependencies.
-        /// </summary>
-        private string ApplyBuiltinTokens(string path)
-        {
-            path = path.Replace("[YamlDir]", _yamlDir)
-                       .Replace("[CurrentDir]", Environment.CurrentDirectory);
-            if (_gitRoot != null)
-                path = path.Replace("[GitRoot]", _gitRoot);
-            return path;
-        }
-
-        /// <summary>
-        /// Applies all tokens: built-ins first, then user-defined paths: entries.
-        /// paths: values are resolved through built-ins only (no chaining between
-        /// paths: entries) to avoid circular references.
-        /// </summary>
-        private string ApplyTokens(string path)
-        {
-            path = ApplyBuiltinTokens(path);
-
-            foreach (var p in _paths)
-                path = path.Replace($"[{p.Key}]", ApplyBuiltinTokens(p.Value));
-
-            return path;
+            Tokens = new TokenSubstitutor(_yamlDir, _gitRoot, merged);
         }
 
         public string Resolve(string path)
         {
-            path = ApplyTokens(path);
+            path = Tokens.Substitute(path);
 
             // Replace aliases, then apply tokens again so alias values like
             // "[GitRoot]/src/..." resolve correctly.

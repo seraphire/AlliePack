@@ -726,20 +726,23 @@ namespace AlliePack
             }
             else if (!string.IsNullOrEmpty(element.Solution))
             {
+                string configuration = _resolver.Tokens.Substitute(element.Configuration);
+                string platform      = _resolver.Tokens.Substitute(element.Platform);
+
                 if (_options.Debug)
                 {
                     string resolvedSln = _resolver.Resolve(element.Solution!);
                     Console.WriteLine($"  [debug] solution:        {element.Solution}");
                     Console.WriteLine($"  [debug]              ->  {resolvedSln}");
-                    Console.WriteLine($"  [debug]   configuration: {element.Configuration}");
-                    Console.WriteLine($"  [debug]   platform:      {element.Platform}");
+                    Console.WriteLine($"  [debug]   configuration: {configuration}");
+                    Console.WriteLine($"  [debug]   platform:      {platform}");
                     if (element.ExcludeProjects.Any())
                         Console.WriteLine($"  [debug]   excludeProjects: {string.Join(", ", element.ExcludeProjects)}");
                     if (element.ExcludeFiles.Any())
                         Console.WriteLine($"  [debug]   excludeFiles:    {string.Join(", ", element.ExcludeFiles)}");
                 }
 
-                var solFiles = _solutionResolver.ResolveSolution(element.Solution ?? "", element.Configuration, element.Platform, element.ExcludeProjects, element.ExcludeFiles);
+                var solFiles = _solutionResolver.ResolveSolution(element.Solution ?? "", configuration, platform, element.ExcludeProjects, element.ExcludeFiles);
                 foreach (var f in solFiles)
                     f.RelativeDestinationPath = Path.Combine(newPath, f.RelativeDestinationPath);
 
@@ -753,18 +756,21 @@ namespace AlliePack
             }
             else if (!string.IsNullOrEmpty(element.Project))
             {
+                string configuration = _resolver.Tokens.Substitute(element.Configuration);
+                string platform      = _resolver.Tokens.Substitute(element.Platform);
+
                 if (_options.Debug)
                 {
                     string resolvedProj = _resolver.Resolve(element.Project!);
                     Console.WriteLine($"  [debug] project:         {element.Project}");
                     Console.WriteLine($"  [debug]              ->  {resolvedProj}");
-                    Console.WriteLine($"  [debug]   configuration: {element.Configuration}");
-                    Console.WriteLine($"  [debug]   platform:      {element.Platform}");
+                    Console.WriteLine($"  [debug]   configuration: {configuration}");
+                    Console.WriteLine($"  [debug]   platform:      {platform}");
                     if (element.ExcludeFiles.Any())
                         Console.WriteLine($"  [debug]   excludeFiles:    {string.Join(", ", element.ExcludeFiles)}");
                 }
 
-                var projFiles = _solutionResolver.ResolveProject(element.Project ?? "", element.Configuration, element.Platform, element.ExcludeFiles);
+                var projFiles = _solutionResolver.ResolveProject(element.Project ?? "", configuration, platform, element.ExcludeFiles);
                 foreach (var f in projFiles)
                     f.RelativeDestinationPath = Path.Combine(newPath, f.RelativeDestinationPath);
 
