@@ -108,23 +108,31 @@ namespace AlliePack
         private string GetOutputPath(string projectPath, string configuration, string platform)
         {
             // Simplified logic to find OutputPath in .csproj
-            // For robust resolution, full MSBuild evaluation is needed, 
+            // For robust resolution, full MSBuild evaluation is needed,
             // but we'll try a common pattern search first.
             try
             {
                 var doc = XDocument.Load(projectPath);
                 var ns = doc.Root?.Name.Namespace;
-                
+
+                // Normalise "Any CPU" (VS display name) <-> "AnyCPU" (MSBuild condition name).
+                // .csproj conditions always use the no-space form; accept either in the YAML.
+                string platformNoSpace  = platform.Replace(" ", "");   // "Any CPU" -> "AnyCPU"
+                string platformWithSpace = platformNoSpace.Equals("AnyCPU", StringComparison.OrdinalIgnoreCase)
+                    ? "Any CPU" : platform;
+
                 // Try to find PropertyGroup with matching Configuration/Platform
                 var propertyGroups = doc.Descendants(ns + "PropertyGroup");
-                
+
                 string? bestPath = null;
 
                 foreach (var pg in propertyGroups)
                 {
                     string condition = pg.Attribute("Condition")?.Value ?? "";
                     bool matchesConfig = string.IsNullOrEmpty(configuration) || condition.Contains(configuration);
-                    bool matchesPlatform = string.IsNullOrEmpty(platform) || condition.Contains(platform);
+                    bool matchesPlatform = string.IsNullOrEmpty(platform)
+                        || condition.Contains(platformNoSpace)
+                        || condition.Contains(platformWithSpace);
 
                     if (matchesConfig && matchesPlatform)
                     {

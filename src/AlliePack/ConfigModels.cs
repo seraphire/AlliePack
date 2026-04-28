@@ -497,7 +497,8 @@ namespace AlliePack
         [YamlMember(Alias = "password")]
         public string? Password { get; set; }
 
-        // Startup type: auto | demand | disabled | boot | system.  Default: auto.
+        // Startup type (matches WiX/SCM names): auto | demand | disabled | boot | system.
+        // "manual" is accepted as an alias for "demand".  Default: auto.
         [YamlMember(Alias = "start")]
         public string Start { get; set; } = "auto";
 
@@ -571,8 +572,13 @@ namespace AlliePack
         [YamlMember(Alias = "configuration")]
         public string Configuration { get; set; } = "Release";
 
+        // MSBuild platform name used to locate the project's output directory.
+        // Common values: x86, x64, AnyCPU.
+        // Note: MSBuild uses "AnyCPU" (no space) in .csproj conditions even though
+        // Visual Studio displays it as "Any CPU".  Both forms are accepted here;
+        // SolutionResolver normalises the value before matching.
         [YamlMember(Alias = "platform")]
-        public string Platform { get; set; } = "Any CPU";
+        public string Platform { get; set; } = "AnyCPU";
 
         [YamlMember(Alias = "excludeProjects")]
         public List<string> ExcludeProjects { get; set; } = new();

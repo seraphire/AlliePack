@@ -898,13 +898,14 @@ namespace AlliePack
             switch (s.ToLowerInvariant())
             {
                 case "auto":     return SvcStartType.auto;
+                // WiX/SCM canonical name is "demand"; "manual" accepted as a common alias.
                 case "demand":
                 case "manual":   return SvcStartType.demand;
                 case "disabled": return SvcStartType.disabled;
                 case "boot":     return SvcStartType.boot;
                 case "system":   return SvcStartType.system;
                 default:
-                    Console.WriteLine($"Warning: Unknown service start type '{s}', using 'auto'");
+                    Console.WriteLine($"Warning: Unknown service start type '{s}'. Valid values: auto, demand, disabled, boot, system.");
                     return SvcStartType.auto;
             }
         }
