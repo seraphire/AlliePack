@@ -430,7 +430,7 @@ namespace AlliePack
         public string Manufacturer { get; set; } = "My Company";
         public VersionSource Version { get; set; } = new VersionSource("1.0.0.0");
         public string Description { get; set; } = string.Empty;
-        public string UpgradeCode { get; set; } = Guid.NewGuid().ToString();
+        public string? UpgradeCode { get; set; }
 
         // GAP-5: supports conditional map (PerUser/PerMachine) or plain scalar
         [YamlMember(Alias = "installScope")]

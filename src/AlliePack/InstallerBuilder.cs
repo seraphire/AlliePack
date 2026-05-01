@@ -33,6 +33,12 @@ namespace AlliePack
 
         public void Build()
         {
+            if (string.IsNullOrWhiteSpace(_config.Product.UpgradeCode))
+                throw new InvalidOperationException(
+                    "product.upgradeCode is required and must be a stable GUID. " +
+                    "Add 'upgradeCode: <your-guid>' to the product: block in allie-pack.yaml. " +
+                    "Generate one with: [System.Guid]::NewGuid() (PowerShell) or uuidgen (Linux/Mac).");
+
             // Resolve WiX tool location: YAML wixToolsPath > WIXSHARP_WIXLOCATION env var > WixSharp discovery.
             // If wixToolsPath contains an unresolved token (e.g. "[WixTools]" with no --define
             // supplied), treat it as absent so the env-var fallback can still apply.
