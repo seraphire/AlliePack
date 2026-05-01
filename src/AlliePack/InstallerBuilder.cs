@@ -566,7 +566,21 @@ namespace AlliePack
                 if (_options.KeepWxs || Environment.GetEnvironmentVariable("ALLIEPAK_KEEP_WXS") != null)
                     project.PreserveTempFiles = true;
 
-                project.BuildMsi();
+                if (_config.Signing?.Files != null)
+                {
+                    Console.WriteLine("Signing packaged files...");
+                    SigningHelper.SignFiles(uniqueFiles, _config.Signing, _resolver, _options.IsVerbose);
+                }
+
+                string msiPath = project.BuildMsi();
+
+                if (_config.Signing != null)
+                {
+                    if (string.IsNullOrEmpty(msiPath) || !System.IO.File.Exists(msiPath))
+                        Console.WriteLine($"Warning: Code signing skipped -- MSI not found at: {msiPath}");
+                    else
+                        SigningHelper.Sign(msiPath, _config.Signing, _resolver, _options.IsVerbose);
+                }
             }
         }
 
@@ -1335,6 +1349,30 @@ namespace AlliePack
                         Console.WriteLine($"    {item.Source}{(item.Rename != null ? $" (as {item.Rename})" : "")}");
                 }
             }
+
+            if (_config.Signing != null)
+            {
+                var s = _config.Signing;
+                Console.WriteLine("Code Signing:");
+                if (!string.IsNullOrEmpty(s.Thumbprint))
+                    Console.WriteLine($"  method    : thumbprint ({s.Thumbprint})");
+                else if (!string.IsNullOrEmpty(s.Pfx))
+                    Console.WriteLine($"  method    : pfx ({s.Pfx})");
+                if (!string.IsNullOrEmpty(s.TimestampUrl))
+                    Console.WriteLine($"  timestamp : {s.TimestampUrl}");
+                if (!string.IsNullOrEmpty(s.SignToolPath))
+                    Console.WriteLine($"  signtool  : {s.SignToolPath}");
+                if (s.Files != null)
+                {
+                    Console.WriteLine($"  files     : mode={s.Files.Mode}");
+                    if (s.Files.Include != null)
+                        Console.WriteLine($"    include : {string.Join(", ", s.Files.Include)}");
+                    else
+                        Console.WriteLine($"    include : (SIP check -- signable files only)");
+                    if (s.Files.Exclude.Any())
+                        Console.WriteLine($"    exclude : {string.Join(", ", s.Files.Exclude)}");
+                }
+            }
         }
 
         private void PrintEntity(WixEntity entity, int indent)
@@ -1367,5 +1405,6 @@ namespace AlliePack
                 }
             }
         }
+
     }
 }

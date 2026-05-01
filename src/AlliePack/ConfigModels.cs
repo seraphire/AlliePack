@@ -284,6 +284,93 @@ namespace AlliePack
         // GAP-5: flags active when no --flag argument is passed
         [YamlMember(Alias = "defaultActiveFlags")]
         public List<string> DefaultActiveFlags { get; set; } = new();
+
+        [YamlMember(Alias = "signing")]
+        public SigningConfig? Signing { get; set; }
+    }
+
+    // -----------------------------------------------------------------------
+    // Code signing
+    //
+    // Optional top-level block.  When present, AlliePack signs the built MSI
+    // with signtool.exe after the WiX build completes.
+    //
+    // Exactly one of thumbprint or pfx must be supplied.
+    //
+    //   signing:
+    //     thumbprint: "ABCDEF1234..."      # cert in Windows cert store (no password needed)
+    //     timestampUrl: "http://timestamp.digicert.com"
+    //
+    //   signing:
+    //     pfx: "certs/MyApp.pfx"           # path resolved via aliases/tokens
+    //     pfxPassword: "[SIGN_PASSWORD]"   # injected via --define at build time
+    //     timestampUrl: "http://timestamp.digicert.com"
+    //
+    // signToolPath is optional; signtool.exe is discovered via PATH and common
+    // Windows SDK locations when omitted.
+    // -----------------------------------------------------------------------
+
+    public class SigningConfig
+    {
+        // SHA1 thumbprint of a certificate already installed in the Windows cert store.
+        [YamlMember(Alias = "thumbprint")]
+        public string? Thumbprint { get; set; }
+
+        // Path to a PFX file.  Resolved via aliases and path tokens.
+        [YamlMember(Alias = "pfx")]
+        public string? Pfx { get; set; }
+
+        // Password for the PFX file.  Supports [TOKEN] substitution so secrets
+        // can be injected at build time via --define SIGN_PASSWORD=<value>.
+        [YamlMember(Alias = "pfxPassword")]
+        public string? PfxPassword { get; set; }
+
+        // RFC 3161 timestamp server URL.  Recommended for production signing.
+        // Example: http://timestamp.digicert.com
+        [YamlMember(Alias = "timestampUrl")]
+        public string? TimestampUrl { get; set; }
+
+        // Explicit path to signtool.exe.  Discovered via PATH and Windows SDK
+        // locations when omitted.
+        [YamlMember(Alias = "signToolPath")]
+        public string? SignToolPath { get; set; }
+
+        // Optional: sign individual files before packaging them into the MSI.
+        // When absent, only the MSI itself is signed.
+        [YamlMember(Alias = "files")]
+        public FileSigningConfig? Files { get; set; }
+    }
+
+    // -----------------------------------------------------------------------
+    // Per-file signing config (signing.files:)
+    //
+    //   signing:
+    //     thumbprint: "ABCDEF..."
+    //     files:
+    //       mode: unsigned              # all | unsigned (default)
+    //       include: ["*.exe", "*.dll"] # filename globs; SIP check used when omitted
+    //       exclude: ["*.resources.dll"]
+    //
+    // mode: unsigned  -- skip files that already carry an Authenticode signature
+    // mode: all       -- sign every candidate regardless of existing signature
+    //
+    // When include is omitted, AlliePack calls CryptSIPRetrieveSubjectGuid to
+    // ask Windows whether each file is signable -- the same check signtool
+    // performs internally.  Files with no registered SIP handler are skipped.
+    // -----------------------------------------------------------------------
+
+    public class FileSigningConfig
+    {
+        // "all" | "unsigned" (default)
+        [YamlMember(Alias = "mode")]
+        public string Mode { get; set; } = "unsigned";
+
+        // Filename glob patterns.  When null (omitted) the SIP check is the gate.
+        [YamlMember(Alias = "include")]
+        public List<string>? Include { get; set; }
+
+        [YamlMember(Alias = "exclude")]
+        public List<string> Exclude { get; set; } = new();
     }
 
     // -----------------------------------------------------------------------

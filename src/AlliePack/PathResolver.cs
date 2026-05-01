@@ -52,7 +52,7 @@ namespace AlliePack
             {
                 if (path.StartsWith(alias.Key + ":"))
                 {
-                    string aliasValue = ApplyTokens(alias.Value);
+                    string aliasValue = Tokens.Substitute(alias.Value);
                     path = Path.Combine(aliasValue, path.Substring(alias.Key.Length + 1));
                     break; // Only one alias per path
                 }
