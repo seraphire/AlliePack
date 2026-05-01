@@ -23,7 +23,7 @@ namespace AlliePack
 
         private void Log(string message) { if (_debug) Console.WriteLine($"  [debug] {message}"); }
 
-        public List<ResolvedFile> ResolveSolution(string solutionPath, string configuration, string platform, List<string> excludeProjects, List<string> excludeFiles)
+        public List<ResolvedFile> ResolveSolution(string solutionPath, string configuration, string platform, List<string> includeProjects, List<string> excludeProjects, List<string> excludeFiles)
         {
             var results = new List<ResolvedFile>();
             string fullPath = _pathResolver.Resolve(solutionPath);
@@ -44,6 +44,8 @@ namespace AlliePack
 
             foreach (var project in solutionModel.SolutionProjects)
             {
+                if (includeProjects.Count > 0 && (project.DisplayName == null || !includeProjects.Contains(project.DisplayName)))
+                    continue;
                 if (project.DisplayName != null && excludeProjects.Contains(project.DisplayName))
                     continue;
 

@@ -967,13 +967,15 @@ namespace AlliePack
                     Console.WriteLine($"  [debug]              ->  {resolvedSln}");
                     Console.WriteLine($"  [debug]   configuration: {configuration}");
                     Console.WriteLine($"  [debug]   platform:      {platform}");
+                    if (element.IncludeProjects.Any())
+                        Console.WriteLine($"  [debug]   includeProjects: {string.Join(", ", element.IncludeProjects)}");
                     if (element.ExcludeProjects.Any())
                         Console.WriteLine($"  [debug]   excludeProjects: {string.Join(", ", element.ExcludeProjects)}");
                     if (element.ExcludeFiles.Any())
                         Console.WriteLine($"  [debug]   excludeFiles:    {string.Join(", ", element.ExcludeFiles)}");
                 }
 
-                var solFiles = _solutionResolver.ResolveSolution(element.Solution ?? "", configuration, platform, element.ExcludeProjects, element.ExcludeFiles);
+                var solFiles = _solutionResolver.ResolveSolution(element.Solution ?? "", configuration, platform, element.IncludeProjects, element.ExcludeProjects, element.ExcludeFiles);
                 foreach (var f in solFiles)
                     f.RelativeDestinationPath = Path.Combine(newPath, f.RelativeDestinationPath);
 

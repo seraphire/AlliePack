@@ -670,6 +670,12 @@ namespace AlliePack
         [YamlMember(Alias = "platform")]
         public string Platform { get; set; } = "AnyCPU";
 
+        // When non-empty, only projects whose names appear in this list are included.
+        // Acts as a whitelist; excludeProjects is applied afterward as an additional filter.
+        // Useful when referencing a large solution but only needing one project's output.
+        [YamlMember(Alias = "includeProjects")]
+        public List<string> IncludeProjects { get; set; } = new();
+
         [YamlMember(Alias = "excludeProjects")]
         public List<string> ExcludeProjects { get; set; } = new();
 
