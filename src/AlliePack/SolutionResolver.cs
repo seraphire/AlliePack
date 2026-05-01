@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Xml;
 using System.Xml.Linq;
 using Microsoft.VisualStudio.SolutionPersistence;
 using Microsoft.VisualStudio.SolutionPersistence.Model;
@@ -169,8 +170,19 @@ namespace AlliePack
 
                 return bestPath ?? "";
             }
-            catch
+            catch (XmlException ex)
             {
+                Console.WriteLine($"Warning: Could not parse '{projectPath}' as XML: {ex.Message}");
+                return "";
+            }
+            catch (IOException ex)
+            {
+                Console.WriteLine($"Warning: Could not read '{projectPath}': {ex.Message}");
+                return "";
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: Unexpected error reading output path from '{projectPath}': {ex.GetType().Name}: {ex.Message}");
                 return "";
             }
         }
