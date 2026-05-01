@@ -12,11 +12,10 @@ namespace AlliePack
 {
     internal class Program
     {
-        static void Main(string[] args)
+        static int Main(string[] args)
         {
-            CommandLine.Parser.Default.ParseArguments<Options>(args)
-                .WithParsed(Run)
-                .WithNotParsed(errors => { /* Error handling handled by CommandLineParser */ });
+            return CommandLine.Parser.Default.ParseArguments<Options>(args)
+                .MapResult(Run, errors => 1);
         }
 
         static string GetVersion()
@@ -28,7 +27,7 @@ namespace AlliePack
                    ?? "unknown";
         }
 
-        static void Run(Options options)
+        static int Run(Options options)
         {
             Console.WriteLine($"AlliePack v{GetVersion()}");
             Console.WriteLine();
@@ -48,7 +47,7 @@ namespace AlliePack
                     Console.WriteLine($"Error: Configuration file not found at {configPath}");
                     Console.WriteLine("Create an allie-pack.yaml in the current directory, or pass a path as the first argument.");
                     Console.WriteLine("Run with --help to see all options.");
-                    return;
+                    return 1;
                 }
 
                 Console.WriteLine($"Reading config: {configPath}...");
@@ -92,6 +91,7 @@ namespace AlliePack
                 builder.Build();
 
                 Console.WriteLine("Done.");
+                return 0;
             }
             catch (YamlException ex)
             {
@@ -115,12 +115,16 @@ namespace AlliePack
 
                 if (options.IsVerbose)
                     Console.WriteLine(ex.StackTrace);
+
+                return 1;
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Fatal Error: {ex.Message}");
                 if (options.IsVerbose)
                     Console.WriteLine(ex.StackTrace);
+
+                return 1;
             }
         }
 
