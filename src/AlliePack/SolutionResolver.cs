@@ -40,7 +40,7 @@ namespace AlliePack
             if (serializer == null)
                 throw new NotSupportedException($"Unsupported solution extension: {ext}");
 
-            var solutionModel = serializer.OpenAsync(fullPath, default).Result;
+            var solutionModel = serializer.OpenAsync(fullPath, default).GetAwaiter().GetResult();
 
             foreach (var project in solutionModel.SolutionProjects)
             {
