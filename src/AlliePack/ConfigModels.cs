@@ -287,6 +287,9 @@ namespace AlliePack
 
         [YamlMember(Alias = "signing")]
         public SigningConfig? Signing { get; set; }
+
+        [YamlMember(Alias = "features")]
+        public List<FeatureConfig> Features { get; set; } = new();
     }
 
     // -----------------------------------------------------------------------
@@ -682,5 +685,88 @@ namespace AlliePack
 
         [YamlMember(Alias = "contents")]
         public List<StructureElement>? Contents { get; set; }
+    }
+
+    // -----------------------------------------------------------------------
+    // Features
+    //
+    // Optional list of independently selectable installer features.  Each
+    // feature maps to a WiX <Feature> element and gets its own checkbox in
+    // the FeaturesDialog presented to the user during install.
+    //
+    // When features: is present, the top-level structure:/shortcuts:/etc.
+    // blocks become "always-installed" base content.  For a bundle of N
+    // completely independent programs with no shared base, leave the top-level
+    // content blocks empty and put everything in features:.
+    //
+    // Example -- 4 independent service programs in one installer:
+    //
+    //   features:
+    //     - id: ServiceA
+    //       name: "Service A"
+    //       description: "Handles order processing"
+    //       default: true
+    //       structure:
+    //         - project: services/ServiceA/ServiceA.csproj
+    //       services:
+    //         - name: ServiceA
+    //           executable: "[INSTALLDIR]\\ServiceA.exe"
+    //
+    //     - id: ServiceB
+    //       name: "Service B"
+    //       default: false
+    //       structure:
+    //         - project: services/ServiceB/ServiceB.csproj
+    //       services:
+    //         - name: ServiceB
+    //           executable: "[INSTALLDIR]\\ServiceB.exe"
+    //
+    // Supported per-feature blocks:
+    //   structure, shortcuts, environment, registry, services, groups
+    //
+    // display values: collapse (default) | expand | hidden
+    // default: true (checked) | false (unchecked) -- whether the feature is
+    //          selected when the dialog first opens
+    // -----------------------------------------------------------------------
+
+    public class FeatureConfig
+    {
+        // Short identifier used internally; not shown to the user.
+        [YamlMember(Alias = "id")]
+        public string Id { get; set; } = string.Empty;
+
+        // Display name shown in the FeaturesDialog tree.
+        [YamlMember(Alias = "name")]
+        public string Name { get; set; } = string.Empty;
+
+        // Optional description shown below the tree when this feature is selected.
+        [YamlMember(Alias = "description")]
+        public string Description { get; set; } = string.Empty;
+
+        // Whether the feature is checked by default.  Default: true.
+        [YamlMember(Alias = "default")]
+        public bool Default { get; set; } = true;
+
+        // Initial tree node state: collapse (default) | expand | hidden.
+        [YamlMember(Alias = "display")]
+        public string Display { get; set; } = "collapse";
+
+        [YamlMember(Alias = "structure")]
+        public List<StructureElement> Structure { get; set; } = new();
+
+        [YamlMember(Alias = "shortcuts")]
+        public List<ShortcutInfo> Shortcuts { get; set; } = new();
+
+        [YamlMember(Alias = "environment")]
+        public List<EnvVarConfig> Environment { get; set; } = new();
+
+        [YamlMember(Alias = "registry")]
+        public List<RegistryConfig> Registry { get; set; } = new();
+
+        [YamlMember(Alias = "services")]
+        public List<ServiceConfig> Services { get; set; } = new();
+
+        [YamlMember(Alias = "groups")]
+        public List<FileGroupConfig> Groups { get; set; } = new();
     }
 }

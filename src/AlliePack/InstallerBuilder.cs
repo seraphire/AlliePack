@@ -101,8 +101,25 @@ namespace AlliePack
 
             var allFiles = new List<ResolvedFile>();
             foreach (var element in _config.Structure)
-            {
                 allFiles.AddRange(ProcessElement(element));
+
+            // Build WixSharp Feature objects and collect feature-tagged files
+            var wixFeatures = new Dictionary<string, Feature>(StringComparer.OrdinalIgnoreCase);
+            foreach (var fc in _config.Features)
+            {
+                var wixFeature = new Feature(fc.Name, fc.Description, fc.Default)
+                {
+                    Display = ParseFeatureDisplay(fc.Display)
+                };
+                wixFeatures[fc.Id] = wixFeature;
+
+                foreach (var element in fc.Structure)
+                {
+                    var featureFiles = ProcessElement(element);
+                    foreach (var f in featureFiles)
+                        f.WixFeature = wixFeature;
+                    allFiles.AddRange(featureFiles);
+                }
             }
 
             // Deduplicate
@@ -461,6 +478,188 @@ namespace AlliePack
                     Console.WriteLine($"Group '{group.Id}': {groupFiles.Count} file(s) -> {destPath}");
             }
 
+            // Per-feature content
+            foreach (var fc in _config.Features)
+            {
+                var wixFeature = wixFeatures[fc.Id];
+
+                foreach (var ev in fc.Environment)
+                {
+                    string evScope;
+                    if (ev.Scope != null)
+                        evScope = ev.Scope.Resolve(_activeFlags);
+                    else if (rawInstallScope.Equals("both", StringComparison.OrdinalIgnoreCase))
+                        evScope = isMachine ? "machine" : "user";
+                    else
+                        evScope = "user";
+
+                    string evValue = ev.Value.Resolve(_activeFlags);
+                    bool isSystem = evScope.Equals("machine", StringComparison.OrdinalIgnoreCase);
+                    var envVar = new EnvironmentVariable(ev.Name, evValue)
+                    {
+                        System = isSystem,
+                        Permanent = false,
+                        Feature = wixFeature,
+                    };
+                    targetDir.GenericItems = (targetDir.GenericItems ?? new IGenericEntity[0])
+                        .Concat(new IGenericEntity[] { envVar })
+                        .ToArray();
+                }
+
+                foreach (var reg in fc.Registry)
+                {
+                    string rawValue = reg.Value.Resolve(_activeFlags);
+                    object typedValue = ParseRegistryValueData(rawValue, reg.Type);
+                    bool regWin64 = reg.Win64 ?? is64;
+                    var regValue = new RegValue(ParseRegistryHive(reg.Root), reg.Key, reg.Name, typedValue)
+                    {
+                        Win64 = regWin64,
+                        Feature = wixFeature,
+                    };
+                    string? wixType = MapRegistryTypeName(reg.Type);
+                    if (wixType != null) regValue.Type = wixType;
+                    entities.Add(regValue);
+                }
+
+                foreach (var s in fc.Shortcuts)
+                {
+                    string targetPath = ResolvePath(s.Target, installPath);
+                    if (fileMap.TryGetValue(targetPath, out var wixFile))
+                    {
+                        string folder = ResolveFolder(s.Folder, isMachine);
+                        string? rootKey = null;
+                        if (folder.StartsWith("%"))
+                            rootKey = folder.Split(new[] { '\\' }, StringSplitOptions.RemoveEmptyEntries)[0];
+                        else if (folder.StartsWith("[") && folder.Contains("]"))
+                            rootKey = folder.Substring(0, folder.IndexOf(']') + 1);
+
+                        if (rootKey != null && !shortcutRootDirs.TryGetValue(rootKey, out _))
+                        {
+                            var rootDirEntity = new Dir(rootKey);
+                            shortcutRootDirs[rootKey] = rootDirEntity;
+                            entities.Add(rootDirEntity);
+                        }
+
+                        if (rootKey != null)
+                        {
+                            Dir current = shortcutRootDirs[rootKey];
+                            string[] parts = folder.Split(new[] { '\\' }, StringSplitOptions.RemoveEmptyEntries);
+                            for (int i = 1; i < parts.Length; i++)
+                            {
+                                var existing = current.Dirs.FirstOrDefault(d => d.Name == parts[i]);
+                                if (existing == null)
+                                {
+                                    existing = new Dir(parts[i]);
+                                    current.Dirs = (current.Dirs ?? new Dir[0]).Concat(new[] { existing }).ToArray();
+                                }
+                                current = existing;
+                            }
+                        }
+
+                        var shortcut = new FileShortcut(s.Name, folder) { Description = s.Description };
+                        wixFile.Shortcuts = (wixFile.Shortcuts ?? new FileShortcut[0]).Concat(new[] { shortcut }).ToArray();
+                    }
+                    else
+                    {
+                        Console.WriteLine($"Warning: Feature '{fc.Id}' shortcut target not found: {s.Target}");
+                    }
+                }
+
+                foreach (var svc in fc.Services)
+                {
+                    string execPath = ResolvePath(svc.Executable, installPath);
+                    if (!fileMap.TryGetValue(execPath, out var svcFile))
+                    {
+                        Console.WriteLine($"Warning: Feature '{fc.Id}' service '{svc.Name}': executable not found in install tree: {svc.Executable}");
+                        continue;
+                    }
+
+                    var si = new ServiceInstaller
+                    {
+                        Name        = svc.Name,
+                        DisplayName = svc.DisplayName ?? svc.Name,
+                        Description = svc.Description ?? string.Empty,
+                        Account     = svc.Account,
+                        Start       = ParseSvcStartType(svc.Start),
+                        Type        = ParseSvcType(svc.Type),
+                        ErrorControl = ParseSvcErrorControl(svc.ErrorControl),
+                        StartOn  = SvcEvent.Install,
+                        StopOn   = SvcEvent.InstallUninstall_Wait,
+                        RemoveOn = SvcEvent.Uninstall_Wait,
+                    };
+                    if (!string.IsNullOrEmpty(svc.Arguments))  si.Arguments       = svc.Arguments;
+                    if (!string.IsNullOrEmpty(svc.Password))   si.Password        = svc.Password;
+                    if (svc.Interactive.HasValue)               si.Interactive     = svc.Interactive;
+                    if (svc.DelayedAutoStart.HasValue)          si.DelayedAutoStart = svc.DelayedAutoStart;
+                    if (svc.OnFailure != null)
+                    {
+                        si.FirstFailureActionType  = ParseFailureAction(svc.OnFailure.First);
+                        si.SecondFailureActionType = ParseFailureAction(svc.OnFailure.Second);
+                        si.ThirdFailureActionType  = ParseFailureAction(svc.OnFailure.Third);
+                        if (svc.OnFailure.ResetAfterDays.HasValue)      si.ResetPeriodInDays           = svc.OnFailure.ResetAfterDays;
+                        if (svc.OnFailure.RestartDelaySeconds.HasValue)  si.RestartServiceDelayInSeconds = svc.OnFailure.RestartDelaySeconds;
+                    }
+                    if (svc.DependsOn.Any())
+                        si.DependsOn = svc.DependsOn.Select(d => new ServiceDependency(d)).ToArray();
+
+                    svcFile.ServiceInstallers = (svcFile.ServiceInstallers ?? new IGenericEntity[0])
+                        .Concat(new IGenericEntity[] { si })
+                        .ToArray();
+
+                    if (_options.IsVerbose)
+                        Console.WriteLine($"Feature '{fc.Id}' service '{svc.Name}' -> {svc.Executable}");
+                }
+
+                foreach (var group in fc.Groups)
+                {
+                    if (!namedDirMap.TryGetValue(group.DestinationDir, out var destPath))
+                    {
+                        Console.WriteLine($"Warning: Feature '{fc.Id}' group '{group.Id}' references unknown directory '{group.DestinationDir}'");
+                        continue;
+                    }
+
+                    var groupFiles = new List<File>();
+                    foreach (var item in group.Files)
+                    {
+                        var resolved = _resolver.ResolveGlob(item.Source);
+                        if (!resolved.Any())
+                        {
+                            Console.WriteLine($"Warning: Feature '{fc.Id}' group '{group.Id}': no files matched '{item.Source}'");
+                            continue;
+                        }
+                        bool neverOverwrite = string.Equals(group.Condition, "notExists", StringComparison.OrdinalIgnoreCase);
+                        foreach (var filePath in resolved)
+                        {
+                            var wf = new File(filePath) { Feature = wixFeature };
+                            if (!string.IsNullOrEmpty(item.Rename)) wf.Name = item.Rename;
+                            var attrs = new List<string>();
+                            if (neverOverwrite) attrs.Add("Component:NeverOverwrite=yes");
+                            if (group.Permanent) attrs.Add("Component:Permanent=yes");
+                            if (attrs.Count > 0) wf.AttributesDefinition = string.Join(";", attrs);
+                            groupFiles.Add(wf);
+                        }
+                    }
+
+                    if (!groupFiles.Any()) continue;
+
+                    string[] groupPathParts = destPath.Replace('/', '\\')
+                        .Split(new[] { '\\' }, StringSplitOptions.RemoveEmptyEntries);
+                    Dir groupRootDir = new Dir(groupPathParts[0]);
+                    Dir leafDir = groupRootDir;
+                    for (int i = 1; i < groupPathParts.Length; i++)
+                    {
+                        var next = new Dir(groupPathParts[i]);
+                        leafDir.Dirs = new[] { next };
+                        leafDir = next;
+                    }
+                    leafDir.Files = groupFiles.ToArray();
+                    entities.Add(groupRootDir);
+
+                    if (_options.IsVerbose)
+                        Console.WriteLine($"Feature '{fc.Id}' group '{group.Id}': {groupFiles.Count} file(s) -> {destPath}");
+                }
+            }
+
             var project = new ManagedProject(_config.Product.Name, entities.ToArray());
 
             if (_config.Product.Platform.Equals("x64", StringComparison.OrdinalIgnoreCase))
@@ -490,23 +689,41 @@ namespace AlliePack
             // Configure installer UI. Always use ManagedUI for a consistent look;
             // include the licence dialog only when a license file is supplied.
             var ui = new ManagedUI();
+            bool hasFeatures = _config.Features.Any();
             if (!string.IsNullOrEmpty(_config.Product.LicenseFile))
             {
                 project.LicenceFile = _resolver.Resolve(_config.Product.LicenseFile!);
-                ui.InstallDialogs
-                    .Add<WelcomeDialog>()
-                    .Add<LicenceDialog>()
-                    .Add<InstallDirDialog>()
-                    .Add<ProgressDialog>()
-                    .Add<ExitDialog>();
+                if (hasFeatures)
+                    ui.InstallDialogs
+                        .Add<WelcomeDialog>()
+                        .Add<LicenceDialog>()
+                        .Add<InstallDirDialog>()
+                        .Add<FeaturesDialog>()
+                        .Add<ProgressDialog>()
+                        .Add<ExitDialog>();
+                else
+                    ui.InstallDialogs
+                        .Add<WelcomeDialog>()
+                        .Add<LicenceDialog>()
+                        .Add<InstallDirDialog>()
+                        .Add<ProgressDialog>()
+                        .Add<ExitDialog>();
             }
             else
             {
-                ui.InstallDialogs
-                    .Add<WelcomeDialog>()
-                    .Add<InstallDirDialog>()
-                    .Add<ProgressDialog>()
-                    .Add<ExitDialog>();
+                if (hasFeatures)
+                    ui.InstallDialogs
+                        .Add<WelcomeDialog>()
+                        .Add<InstallDirDialog>()
+                        .Add<FeaturesDialog>()
+                        .Add<ProgressDialog>()
+                        .Add<ExitDialog>();
+                else
+                    ui.InstallDialogs
+                        .Add<WelcomeDialog>()
+                        .Add<InstallDirDialog>()
+                        .Add<ProgressDialog>()
+                        .Add<ExitDialog>();
             }
             ui.ModifyDialogs
                 .Add<MaintenanceTypeDialog>()
@@ -817,6 +1034,7 @@ namespace AlliePack
                 if (parts.Length == 1)
                 {
                     var wixFile = new File(file.SourcePath);
+                    if (file.WixFeature != null) wixFile.Feature = file.WixFeature;
                     string fileName = Path.GetFileName(file.SourcePath);
                     string? sfn = GenerateShortName(fileName, seenNames[""]);
                     if (sfn != null)
@@ -832,7 +1050,7 @@ namespace AlliePack
                     // Navigate/Create Dir structure
                     string currentPath = parts[0];
                     Dir current = GetOrCreateDir(rootDirs, parts[0], seenNames[""]);
-                    
+
                     for (int i = 1; i < parts.Length - 1; i++)
                     {
                         string parentPath = currentPath;
@@ -840,9 +1058,10 @@ namespace AlliePack
                         if (!seenNames.ContainsKey(parentPath)) seenNames[parentPath] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                         current = GetOrCreateDir(current, parts[i], seenNames[parentPath]);
                     }
-                    
+
                     if (!seenNames.ContainsKey(currentPath)) seenNames[currentPath] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     var wixFile = new File(file.SourcePath);
+                    if (file.WixFeature != null) wixFile.Feature = file.WixFeature;
                     string fileName = Path.GetFileName(file.SourcePath);
                     string? sfn = GenerateShortName(fileName, seenNames[currentPath]);
                     if (sfn != null)
@@ -850,7 +1069,7 @@ namespace AlliePack
                         wixFile.AttributesDefinition = $"ShortName={sfn}";
                         seenNames[currentPath].Add(sfn);
                     }
-                    
+
                     current.Files = (current.Files ?? new File[0]).Concat(new[] { wixFile }).ToArray();
                     fileMap[fullDestPath] = wixFile;
                 }
@@ -936,6 +1155,20 @@ namespace AlliePack
                 
                 suffix++;
                 if (suffix > 9999) return null; // Let Wix handle if we have too many collisions
+            }
+        }
+
+        // -----------------------------------------------------------------------
+        // Feature helpers
+        // -----------------------------------------------------------------------
+
+        private static FeatureDisplay ParseFeatureDisplay(string s)
+        {
+            switch (s.ToLowerInvariant())
+            {
+                case "expand":  return FeatureDisplay.expand;
+                case "hidden":  return FeatureDisplay.hidden;
+                default:        return FeatureDisplay.collapse;
             }
         }
 
@@ -1371,6 +1604,38 @@ namespace AlliePack
                         Console.WriteLine($"    include : (SIP check -- signable files only)");
                     if (s.Files.Exclude.Any())
                         Console.WriteLine($"    exclude : {string.Join(", ", s.Files.Exclude)}");
+                }
+            }
+
+            if (_config.Features.Any())
+            {
+                Console.WriteLine($"Features ({_config.Features.Count}):");
+                foreach (var fc in _config.Features)
+                {
+                    string defaultLabel = fc.Default ? "on" : "off";
+                    Console.WriteLine($"  [{fc.Id}]  name={fc.Name}  default={defaultLabel}  display={fc.Display}");
+                    if (!string.IsNullOrEmpty(fc.Description))
+                        Console.WriteLine($"    description: {fc.Description}");
+                    if (fc.Structure.Any())
+                        Console.WriteLine($"    structure  : {fc.Structure.Count} element(s)");
+                    if (fc.Shortcuts.Any())
+                        Console.WriteLine($"    shortcuts  : {fc.Shortcuts.Count}");
+                    if (fc.Services.Any())
+                    {
+                        Console.WriteLine($"    services   :");
+                        foreach (var svc in fc.Services)
+                        {
+                            string startLabel = svc.Start.ToLowerInvariant() == "auto" && svc.DelayedAutoStart == true
+                                ? "auto (delayed)" : svc.Start;
+                            Console.WriteLine($"      [{svc.Name}]  start={startLabel}  account={svc.Account}");
+                        }
+                    }
+                    if (fc.Registry.Any())
+                        Console.WriteLine($"    registry   : {fc.Registry.Count} value(s)");
+                    if (fc.Environment.Any())
+                        Console.WriteLine($"    environment: {fc.Environment.Count} variable(s)");
+                    if (fc.Groups.Any())
+                        Console.WriteLine($"    groups     : {fc.Groups.Count}");
                 }
             }
         }
