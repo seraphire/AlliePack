@@ -749,24 +749,29 @@ run without elevation. AlliePack infers the required elevation level from the
 chain and sets the bootstrapper manifest accordingly -- no explicit config
 needed.
 
-### Code signing
+### Code signing for Burn bootstrappers
 
-Burn bootstrapper EXEs must be signed to avoid SmartScreen warnings. MSIs
-benefit from signing too. This introduces a `signing:` block that applies to
-all outputs from the config:
+> **MSI signing is already implemented** — the `signing:` top-level block is
+> live and supports thumbprint, PFX, Azure Trusted Signing, and a custom
+> command escape hatch.  See [docs/signing.md](docs/signing.md) for the full
+> reference.
+
+What Phase 9 adds is extending signing to the Burn bootstrapper **EXE**.
+Burn bootstrapper EXEs must be signed separately from the MSIs they chain —
+WiX uses its `insignia` tool to detach, re-sign, and reattach the engine.
+AlliePack will handle this automatically when a bundle is declared and
+`signing:` is present; no additional config is needed.
 
 ```yaml
+# signing: already works today for MSIs and packaged files.
+# Phase 9 extends it to bootstrapper EXEs automatically.
 signing:
-  thumbprint: "ABCDEF1234..."        # certificate thumbprint in local cert store
-  # or
-  pfx: "certs/MyApp.pfx"
-  pfxPassword: "[SIGN_PASSWORD]"     # injected via --define at build time
+  thumbprint: "ABCDEF1234..."
   timestampUrl: "http://timestamp.digicert.com"
 ```
 
-`signing:` is a top-level block (not under `product:`) so it remains invisible
-to configs that don't need it. When present it applies to all MSI outputs and,
-if a bundle is declared, to the bootstrapper EXE as well.
+When present, `signing:` applies to all MSI outputs and, once Phase 9 lands,
+to the bootstrapper EXE as well.
 
 ---
 

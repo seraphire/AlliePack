@@ -95,6 +95,7 @@ directories:    # optional
 groups:         # optional
 releaseFlags:   # optional
 defaultActiveFlags: # optional
+signing:        # optional — sign the MSI and/or packaged files
 wix:            # optional — raw WiX XML escape hatch
 ```
 
@@ -273,7 +274,37 @@ installScope:
 Conditional maps are supported on: `product.installScope`, `product.installDir`,
 `directories[].path`, `environment[].scope`, `environment[].value`.
 
-### 5.9 `wix:`
+### 5.9 `signing:`
+
+Optional. Signs the built MSI with `signtool.exe` after the WiX build completes.
+Configs that omit it are unaffected.
+
+Exactly one signing provider must be chosen:
+
+| Provider | Description |
+|---|---|
+| `thumbprint` | SHA1 thumbprint of a cert in the Windows cert store |
+| `pfx` | PFX file on disk; password injected via `--define` |
+| `azure` | Azure Trusted Signing (signtool + Azure dlib + generated metadata.json) |
+| `command` | Arbitrary shell command; `{file}` is substituted with the file path |
+
+All signtool-based providers accept `timestampUrl` (RFC 3161; strongly recommended)
+and an optional `files:` subsection to sign packaged binaries before WiX packages
+them into the MSI.
+
+```yaml
+signing:
+  thumbprint: "ABCDEF1234567890ABCDEF1234567890ABCDEF12"
+  timestampUrl: "http://timestamp.digicert.com"
+  files:
+    mode: unsigned              # all | unsigned (default)
+    include: ["*.exe", "*.dll"]
+    exclude: ["*.resources.dll"]
+```
+
+Full reference: [docs/signing.md](signing.md)
+
+### 5.10 `wix:`
 
 Raw WiX XML escape hatch. Fragments are injected into the generated Wix document
 before compilation.
@@ -334,7 +365,8 @@ Feature tests live under `test/features/`. Each subdirectory contains:
 ## 9. Known Limitations (current version)
 
 - Windows only; requires .NET Framework 4.8.1 on build machine
-- WiX compiler must be present (installed via `WixSharp_wix4.bin` NuGet)
-- Registry keys, Windows Services, IIS, ODBC — not yet implemented; use `wix: fragments:` as interim
+- WiX compiler must be present (installed as a dotnet tool: `dotnet tool install --global wix`)
+- IIS, ODBC, COM registration — not yet implemented; use `wix: fragments:` as interim
 - Per-user shortcuts require the installer to run in the user session; some per-user install scenarios need additional WiX configuration
 - Solution resolver requires MSBuild outputs to be present; does not invoke a build
+- Azure Trusted Signing (`signing.azure:`) requires the Azure Artifact Signing Client Tools installed separately (`winget install -e --id Microsoft.Azure.ArtifactSigningClientTools`)

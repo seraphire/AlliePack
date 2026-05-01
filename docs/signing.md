@@ -6,7 +6,14 @@ Configs that omit it are unaffected.
 
 ## Configuration
 
-Exactly one of `thumbprint` or `pfx` must be supplied.
+Exactly one signing provider must be chosen:
+
+| Provider | Description |
+|---|---|
+| `thumbprint` | Certificate already installed in the Windows cert store |
+| `pfx` | PFX file on disk |
+| `azure` | Azure Trusted Signing (calls `signtool` + Azure dlib) |
+| `command` | Arbitrary shell command — escape hatch for any other tool |
 
 ### File signing (optional)
 
@@ -103,12 +110,97 @@ the YAML:
 AlliePack.exe allie-pack.yaml --define SIGN_PASSWORD=$(SIGN_PASSWORD) --output dist\MyApp.msi
 ```
 
-### Optional fields
+### Azure Trusted Signing
+
+Azure Trusted Signing is a fully managed cloud signing service.  Certificates are
+short-lived (3 days), so `timestampUrl` is **required** — the timestamp is what
+keeps the signature valid after the certificate expires.
+
+**Prerequisites** (one-time setup):
+
+1. Create an Azure Trusted Signing resource in the Azure portal.
+2. Assign yourself the **Certificate Profile Signer** role.
+3. Install the client tools:
+   ```powershell
+   winget install -e --id Microsoft.Azure.ArtifactSigningClientTools
+   ```
+
+**Config:**
+
+```yaml
+signing:
+  azure:
+    endpoint: "https://eus.codesigning.azure.net"   # must match your Azure region
+    account: "MySigningAccount"
+    certificateProfile: "MyProfile"
+    dlibPath: 'C:\Program Files\Microsoft\Azure Code Signing\x64\Azure.CodeSigning.Dlib.dll'
+    correlationId: "[BUILD_ID]"    # optional; supports tokens; useful for audit tracing
+  timestampUrl: "http://timestamp.acs.microsoft.com"
+  files:
+    mode: unsigned
+    include: ["*.exe", "*.dll"]
+```
+
+AlliePack writes a `metadata.json` temp file from the `azure:` fields and passes it
+to `signtool` via `/dmdf`.  You do not need to manage a separate `metadata.json`.
+
+**Regional endpoints** — choose the endpoint that matches your Azure region:
+
+| Region | Endpoint |
+|---|---|
+| East US | `https://eus.codesigning.azure.net` |
+| West US | `https://wus.codesigning.azure.net` |
+| West US 2 | `https://wus2.codesigning.azure.net` |
+| West Europe | `https://weu.codesigning.azure.net` |
+| North Europe | `https://neu.codesigning.azure.net` |
+
+Full list: [Azure Trusted Signing — regions](https://learn.microsoft.com/en-us/azure/trusted-signing/concept-trusted-signing-resources-roles#supported-regions)
+
+**Azure Pipelines example:**
+
+```yaml
+- task: CmdLine@2
+  displayName: Build and sign MSI (Azure Trusted Signing)
+  inputs:
+    script: >
+      AlliePack.exe allie-pack.yaml
+      --define BUILD_ID=$(Build.BuildId)
+      --output $(Build.ArtifactStagingDirectory)\MyApp.msi
+```
+
+Authentication on Azure DevOps hosted agents uses the agent's managed identity
+or service connection — no credentials in the YAML.
+
+### Custom signing command
+
+Use `command:` when you need a signing tool that AlliePack does not natively
+support.  AlliePack substitutes `[TOKEN]` values and replaces `{file}` with the
+file path, then runs the result via `cmd.exe`.
+
+```yaml
+signing:
+  command: 'AzureSignTool.exe sign -kvu "[KV_URL]" -kvc "[CERT_NAME]" -fd sha256 -tr "http://timestamp.acs.microsoft.com" -td sha256 "{file}"'
+```
+
+`{file}` is replaced with the full path to each file being signed (and the MSI
+itself).  Include your own quoting around `{file}` if the tool requires it.
+
+**Passing secrets:**
+
+```
+AlliePack.exe allie-pack.yaml --define KV_URL=$(KV_URL) --define CERT_NAME=$(CERT_NAME)
+```
+
+The `files:` subsection (include/exclude/mode) works with `command:` the same
+way it does with the signtool providers.  AlliePack still performs SIP checks and
+per-file diagnostic output; it just calls your command instead of `signtool`.
+
+### Optional fields (signtool providers only)
 
 | Field | Default | Notes |
 |---|---|---|
-| `timestampUrl` | none | RFC 3161 timestamp server.  Strongly recommended for production so the signature stays valid after the cert expires. |
-| `signToolPath` | auto-discovered | Explicit path to `signtool.exe`.  Discovered via PATH then common Windows SDK locations when omitted. |
+| `timestampUrl` | none | RFC 3161 timestamp server.  Required for `azure:` (3-day certs).  Strongly recommended for production. |
+| `signToolPath` | auto-discovered | Explicit path to `signtool.exe`.  Not used by `command:`. |
 
 ## Tool discovery
 
@@ -122,7 +214,7 @@ AlliePack.exe allie-pack.yaml --define SIGN_PASSWORD=$(SIGN_PASSWORD) --output d
 On Azure DevOps hosted agents the tool is already on `PATH` via the Windows SDK,
 so no additional configuration is needed.
 
-## Azure Pipelines example
+## Azure Pipelines example (thumbprint / PFX)
 
 ```yaml
 - task: CmdLine@2

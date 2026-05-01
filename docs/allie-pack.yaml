@@ -48,3 +48,24 @@ shortcuts:
     target: "[INSTALLDIR]\\AlliePack.exe"
     description: "AlliePack MSI builder"
     folder: "[ProgramMenuFolder]"
+
+# Optional: sign the MSI after building.
+# Uncomment one of the signing providers below.
+# See docs/signing.md for the full reference.
+#
+# signing:
+#   thumbprint: "ABCDEF1234567890ABCDEF1234567890ABCDEF12"
+#   timestampUrl: "http://timestamp.digicert.com"
+#
+# signing:
+#   pfx: "[YamlDir]/certs/MyApp.pfx"
+#   pfxPassword: "[SIGN_PASSWORD]"      # pass via: --define SIGN_PASSWORD=<value>
+#   timestampUrl: "http://timestamp.digicert.com"
+#
+# signing:
+#   azure:
+#     endpoint: "https://eus.codesigning.azure.net"
+#     account: "MySigningAccount"
+#     certificateProfile: "MyProfile"
+#     dlibPath: '[DLIB_PATH]'           # pass via: --define DLIB_PATH=<path to Azure.CodeSigning.Dlib.dll>
+#   timestampUrl: "http://timestamp.acs.microsoft.com"

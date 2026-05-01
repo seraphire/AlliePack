@@ -127,6 +127,135 @@ namespace AlliePack.Tests
         }
 
         // -----------------------------------------------------------------------
+        // BuildArgs -- azure
+        // -----------------------------------------------------------------------
+
+        [Fact]
+        public void BuildArgs_Azure_ContainsDlibAndDmdfFlags()
+        {
+            string dlibPath = Path.Combine(Path.GetTempPath(), "Azure.CodeSigning.Dlib.dll");
+            File.WriteAllText(dlibPath, "placeholder");
+            string metaPath = Path.Combine(Path.GetTempPath(), "meta.json");
+            File.WriteAllText(metaPath, "{}");
+            try
+            {
+                var signing = new SigningConfig
+                {
+                    Azure = new AzureSigningConfig
+                    {
+                        Endpoint           = "https://eus.codesigning.azure.net",
+                        Account            = "MyAccount",
+                        CertificateProfile = "MyProfile",
+                        DlibPath           = dlibPath,
+                    }
+                };
+                string args = SigningHelper.BuildArgs(signing, @"C:\out\MyApp.msi", MakeResolver(), metaPath);
+                Assert.Contains("/dlib", args);
+                Assert.Contains("/dmdf", args);
+                Assert.Contains(dlibPath, args);
+                Assert.Contains(metaPath, args);
+            }
+            finally
+            {
+                File.Delete(dlibPath);
+                File.Delete(metaPath);
+            }
+        }
+
+        [Fact]
+        public void BuildArgs_Azure_NoSigntoolCertFlags()
+        {
+            string dlibPath = Path.Combine(Path.GetTempPath(), "Azure.CodeSigning.Dlib.dll");
+            File.WriteAllText(dlibPath, "placeholder");
+            string metaPath = Path.Combine(Path.GetTempPath(), "meta.json");
+            File.WriteAllText(metaPath, "{}");
+            try
+            {
+                var signing = new SigningConfig
+                {
+                    Azure = new AzureSigningConfig
+                    {
+                        Endpoint           = "https://eus.codesigning.azure.net",
+                        Account            = "Acct",
+                        CertificateProfile = "Prof",
+                        DlibPath           = dlibPath,
+                    }
+                };
+                string args = SigningHelper.BuildArgs(signing, @"C:\out\MyApp.msi", MakeResolver(), metaPath);
+                Assert.DoesNotContain("/sha1", args);
+                Assert.DoesNotContain("/f ", args);
+            }
+            finally
+            {
+                File.Delete(dlibPath);
+                File.Delete(metaPath);
+            }
+        }
+
+        [Fact]
+        public void BuildArgs_Azure_MissingMetadataPath_Throws()
+        {
+            var signing = new SigningConfig
+            {
+                Azure = new AzureSigningConfig
+                {
+                    Endpoint           = "https://eus.codesigning.azure.net",
+                    Account            = "Acct",
+                    CertificateProfile = "Prof",
+                }
+            };
+            Assert.Throws<InvalidOperationException>(
+                () => SigningHelper.BuildArgs(signing, @"C:\out\MyApp.msi", MakeResolver(), azureMetadataPath: null));
+        }
+
+        [Fact]
+        public void BuildArgs_AzureWithThumbprint_Throws()
+        {
+            var signing = new SigningConfig
+            {
+                Thumbprint = "ABC",
+                Azure      = new AzureSigningConfig { Endpoint = "https://x", Account = "a", CertificateProfile = "p" },
+            };
+            var ex = Assert.Throws<InvalidOperationException>(
+                () => SigningHelper.BuildArgs(signing, @"C:\out\MyApp.msi", MakeResolver()));
+            Assert.Contains("exactly one", ex.Message);
+        }
+
+        // -----------------------------------------------------------------------
+        // FindDlib
+        // -----------------------------------------------------------------------
+
+        [Fact]
+        public void FindDlib_ConfigPathExists_ReturnsPath()
+        {
+            string tmp = Path.Combine(Path.GetTempPath(), "Azure.CodeSigning.Dlib.dll");
+            File.WriteAllText(tmp, "placeholder");
+            try
+            {
+                string result = SigningHelper.FindDlib(tmp, MakeResolver());
+                Assert.Equal(tmp, result);
+            }
+            finally { File.Delete(tmp); }
+        }
+
+        [Fact]
+        public void FindDlib_ConfigPathDoesNotExist_ThrowsWithPath()
+        {
+            var ex = Assert.Throws<InvalidOperationException>(
+                () => SigningHelper.FindDlib(@"C:\does\not\exist\Azure.CodeSigning.Dlib.dll", MakeResolver()));
+            Assert.Contains("not found at configured path", ex.Message);
+        }
+
+        [Fact]
+        public void FindDlib_NoPathConfigured_ThrowsWithInstallHint()
+        {
+            var ex = Assert.Throws<InvalidOperationException>(
+                () => SigningHelper.FindDlib(null, MakeResolver()));
+            Assert.Contains("dlibPath", ex.Message);
+            Assert.Contains("winget", ex.Message);
+        }
+
+        // -----------------------------------------------------------------------
         // BuildArgs -- validation errors
         // -----------------------------------------------------------------------
 

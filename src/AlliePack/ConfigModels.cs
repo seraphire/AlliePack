@@ -295,22 +295,15 @@ namespace AlliePack
     // -----------------------------------------------------------------------
     // Code signing
     //
-    // Optional top-level block.  When present, AlliePack signs the built MSI
-    // with signtool.exe after the WiX build completes.
+    // Optional top-level block.  Exactly one signing provider must be chosen:
     //
-    // Exactly one of thumbprint or pfx must be supplied.
+    //   thumbprint  -- cert already installed in the Windows cert store
+    //   pfx         -- PFX file on disk
+    //   azure       -- Azure Trusted Signing (calls signtool + Azure dlib)
+    //   command     -- arbitrary shell command; use {file} as the path placeholder
     //
-    //   signing:
-    //     thumbprint: "ABCDEF1234..."      # cert in Windows cert store (no password needed)
-    //     timestampUrl: "http://timestamp.digicert.com"
-    //
-    //   signing:
-    //     pfx: "certs/MyApp.pfx"           # path resolved via aliases/tokens
-    //     pfxPassword: "[SIGN_PASSWORD]"   # injected via --define at build time
-    //     timestampUrl: "http://timestamp.digicert.com"
-    //
-    // signToolPath is optional; signtool.exe is discovered via PATH and common
-    // Windows SDK locations when omitted.
+    // timestampUrl, signToolPath, and files: apply to all signtool-based
+    // providers (thumbprint, pfx, azure).  They are ignored for command:.
     // -----------------------------------------------------------------------
 
     public class SigningConfig
@@ -328,13 +321,23 @@ namespace AlliePack
         [YamlMember(Alias = "pfxPassword")]
         public string? PfxPassword { get; set; }
 
+        // Azure Trusted Signing provider.  Mutually exclusive with thumbprint/pfx/command.
+        [YamlMember(Alias = "azure")]
+        public AzureSigningConfig? Azure { get; set; }
+
+        // Arbitrary signing command.  AlliePack substitutes [TOKEN] and {file},
+        // then runs the result via cmd.exe.  Mutually exclusive with all other providers.
+        // Example: 'AzureSignTool.exe sign -kvu "[KV_URL]" -kvc "[CERT]" -fd sha256 "{file}"'
+        [YamlMember(Alias = "command")]
+        public string? Command { get; set; }
+
         // RFC 3161 timestamp server URL.  Recommended for production signing.
-        // Example: http://timestamp.digicert.com
+        // Required for azure: (certificates are valid for 3 days only).
         [YamlMember(Alias = "timestampUrl")]
         public string? TimestampUrl { get; set; }
 
         // Explicit path to signtool.exe.  Discovered via PATH and Windows SDK
-        // locations when omitted.
+        // locations when omitted.  Not used by command:.
         [YamlMember(Alias = "signToolPath")]
         public string? SignToolPath { get; set; }
 
@@ -342,6 +345,47 @@ namespace AlliePack
         // When absent, only the MSI itself is signed.
         [YamlMember(Alias = "files")]
         public FileSigningConfig? Files { get; set; }
+    }
+
+    // -----------------------------------------------------------------------
+    // Azure Trusted Signing provider (signing.azure:)
+    //
+    // AlliePack generates a metadata.json temp file from these fields and
+    // passes it to signtool via /dmdf.  No manual metadata.json needed.
+    //
+    //   signing:
+    //     azure:
+    //       endpoint: "https://eus.codesigning.azure.net"
+    //       account: "MySigningAccount"
+    //       certificateProfile: "MyProfile"
+    //       dlibPath: "C:\Tools\x64\Azure.CodeSigning.Dlib.dll"
+    //       correlationId: "[BUILD_ID]"     # optional; supports tokens
+    //     timestampUrl: "http://timestamp.acs.microsoft.com"
+    // -----------------------------------------------------------------------
+
+    public class AzureSigningConfig
+    {
+        // Regional endpoint, e.g. https://eus.codesigning.azure.net
+        [YamlMember(Alias = "endpoint")]
+        public string Endpoint { get; set; } = "";
+
+        // Azure Trusted Signing account name.
+        [YamlMember(Alias = "account")]
+        public string Account { get; set; } = "";
+
+        // Certificate profile name within the account.
+        [YamlMember(Alias = "certificateProfile")]
+        public string CertificateProfile { get; set; } = "";
+
+        // Path to Azure.CodeSigning.Dlib.dll.
+        // Install via: winget install -e --id Microsoft.Azure.ArtifactSigningClientTools
+        [YamlMember(Alias = "dlibPath")]
+        public string? DlibPath { get; set; }
+
+        // Optional correlation ID passed to Azure for audit tracing.
+        // Supports [TOKEN] substitution (e.g. [BUILD_ID] from a pipeline variable).
+        [YamlMember(Alias = "correlationId")]
+        public string? CorrelationId { get; set; }
     }
 
     // -----------------------------------------------------------------------

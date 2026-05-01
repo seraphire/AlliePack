@@ -34,6 +34,8 @@ namespace AlliePack
         // -----------------------------------------------------------------------
         // Check whether a file already carries an Authenticode signature.
         // Used by mode: unsigned to skip already-signed files.
+        // Only detects embedded signatures; catalog-signed files return false,
+        // which is intentional -- they will pass through to be signed.
         // -----------------------------------------------------------------------
 
         internal static bool HasAuthenticodeSignature(string path)
@@ -67,57 +69,85 @@ namespace AlliePack
         {
             var cfg      = signing.Files!;
             bool modeAll = cfg.Mode.Equals("all", StringComparison.OrdinalIgnoreCase);
-            string tool  = FindSignTool(signing.SignToolPath, resolver);
+            bool isCommand = !string.IsNullOrEmpty(signing.Command);
+
+            string? cmdTemplate = isCommand
+                ? resolver.Tokens.Substitute(signing.Command!)
+                : null;
+
+            TempFile? azureTemp = (!isCommand && signing.Azure != null)
+                ? WriteAzureMetadata(signing.Azure, resolver)
+                : null;
+            string? tool = isCommand ? null : FindSignTool(signing.SignToolPath, resolver);
 
             int countSigned = 0, countAlreadySigned = 0, countUnsignable = 0, countFailed = 0;
 
-            foreach (var file in files)
+            try
             {
-                string path = file.SourcePath;
-                string name = Path.GetFileName(path);
+                foreach (var file in files)
+                {
+                    string path = file.SourcePath;
+                    string name = Path.GetFileName(path);
 
-                // --- exclude filter ---
-                if (cfg.Exclude.Any() && MatchesFilename(cfg.Exclude, name))
-                {
-                    if (verbose) Console.WriteLine($"  [excluded] {name}");
-                    continue;
-                }
+                    // --- exclude filter ---
+                    if (cfg.Exclude.Any() && MatchesFilename(cfg.Exclude, name))
+                    {
+                        if (verbose) Console.WriteLine($"  [excluded] {name}");
+                        continue;
+                    }
 
-                // --- include filter (if specified) ---
-                if (cfg.Include != null && !MatchesFilename(cfg.Include, name))
-                {
-                    if (verbose) Console.WriteLine($"  [skip    ] {name} -- not in include list");
-                    continue;
-                }
+                    // --- include filter (if specified) ---
+                    if (cfg.Include != null && !MatchesFilename(cfg.Include, name))
+                    {
+                        if (verbose) Console.WriteLine($"  [skip    ] {name} -- not in include list");
+                        continue;
+                    }
 
-                // --- SIP check: ask Windows whether this file type is signable ---
-                if (!IsSipSignable(path))
-                {
-                    if (verbose) Console.WriteLine($"  [skip    ] {name} -- not signable (no SIP handler)");
-                    countUnsignable++;
-                    continue;
-                }
+                    // --- SIP check: ask Windows whether this file type is signable ---
+                    if (!IsSipSignable(path))
+                    {
+                        if (verbose) Console.WriteLine($"  [skip    ] {name} -- not signable (no SIP handler)");
+                        countUnsignable++;
+                        continue;
+                    }
 
-                // --- already-signed check (mode: unsigned) ---
-                if (!modeAll && HasAuthenticodeSignature(path))
-                {
-                    if (verbose) Console.WriteLine($"  [skip    ] {name} -- already signed");
-                    countAlreadySigned++;
-                    continue;
-                }
+                    // --- already-signed check (mode: unsigned) ---
+                    if (!modeAll && HasAuthenticodeSignature(path))
+                    {
+                        if (verbose) Console.WriteLine($"  [skip    ] {name} -- already signed");
+                        countAlreadySigned++;
+                        continue;
+                    }
 
-                // --- sign ---
-                string args = BuildArgs(signing, path, resolver);
-                if (RunSignTool(tool, args, out string errorText))
-                {
-                    Console.WriteLine($"  [signed  ] {name}");
-                    countSigned++;
+                    // --- sign ---
+                    bool ok;
+                    string errorText;
+                    if (isCommand)
+                    {
+                        string cmd = cmdTemplate!.Replace("{file}", path);
+                        ok = RunCustomCommand(cmd, out errorText);
+                    }
+                    else
+                    {
+                        string args = BuildArgs(signing, path, resolver, azureTemp?.Path);
+                        ok = RunSignTool(tool!, args, out errorText);
+                    }
+
+                    if (ok)
+                    {
+                        Console.WriteLine($"  [signed  ] {name}");
+                        countSigned++;
+                    }
+                    else
+                    {
+                        Console.WriteLine($"  [failed  ] {name} -- {errorText.Trim()}");
+                        countFailed++;
+                    }
                 }
-                else
-                {
-                    Console.WriteLine($"  [failed  ] {name} -- {errorText.Trim()}");
-                    countFailed++;
-                }
+            }
+            finally
+            {
+                azureTemp?.Dispose();
             }
 
             // Summary line always shown
@@ -139,20 +169,43 @@ namespace AlliePack
 
         internal static void Sign(string msiPath, SigningConfig signing, PathResolver resolver, bool verbose)
         {
-            string tool = FindSignTool(signing.SignToolPath, resolver);
-            string args = BuildArgs(signing, msiPath, resolver);
-
-            if (verbose)
-                Console.WriteLine($"  signing: {tool} sign ...");
-
-            if (!RunSignTool(tool, args, out string errorText))
+            if (!string.IsNullOrEmpty(signing.Command))
             {
-                Console.WriteLine(errorText.TrimEnd());
-                throw new InvalidOperationException(
-                    $"Code signing failed (signtool returned non-zero). See output above.");
+                string cmd = resolver.Tokens.Substitute(signing.Command!).Replace("{file}", msiPath);
+                if (verbose) Console.WriteLine($"  signing: {cmd}");
+                if (!RunCustomCommand(cmd, out string errorText))
+                {
+                    Console.WriteLine(errorText.TrimEnd());
+                    throw new InvalidOperationException(
+                        "Code signing failed. See output above.");
+                }
+                Console.WriteLine($"  signed : {msiPath}");
+                return;
             }
 
-            Console.WriteLine($"  signed : {msiPath}");
+            TempFile? azureTemp = signing.Azure != null
+                ? WriteAzureMetadata(signing.Azure, resolver)
+                : null;
+            try
+            {
+                string tool = FindSignTool(signing.SignToolPath, resolver);
+                string args = BuildArgs(signing, msiPath, resolver, azureTemp?.Path);
+
+                if (verbose) Console.WriteLine($"  signing: {tool} sign ...");
+
+                if (!RunSignTool(tool, args, out string errorText))
+                {
+                    Console.WriteLine(errorText.TrimEnd());
+                    throw new InvalidOperationException(
+                        "Code signing failed (signtool returned non-zero). See output above.");
+                }
+
+                Console.WriteLine($"  signed : {msiPath}");
+            }
+            finally
+            {
+                azureTemp?.Dispose();
+            }
         }
 
         // -----------------------------------------------------------------------
@@ -203,17 +256,40 @@ namespace AlliePack
                 "or set signing.signToolPath in the config.");
         }
 
-        internal static string BuildArgs(SigningConfig signing, string filePath, PathResolver resolver)
+        internal static string FindDlib(string? configPath, PathResolver resolver)
+        {
+            if (!string.IsNullOrEmpty(configPath))
+            {
+                string resolved = resolver.Resolve(configPath!);
+                if (File.Exists(resolved)) return resolved;
+                throw new InvalidOperationException(
+                    $"Azure.CodeSigning.Dlib.dll not found at configured path: {resolved}");
+            }
+
+            throw new InvalidOperationException(
+                "signing.azure.dlibPath is required. " +
+                "Install the Azure Artifact Signing Client Tools " +
+                "(winget install -e --id Microsoft.Azure.ArtifactSigningClientTools) " +
+                "and set signing.azure.dlibPath to the full path of Azure.CodeSigning.Dlib.dll.");
+        }
+
+        internal static string BuildArgs(
+            SigningConfig signing,
+            string filePath,
+            PathResolver resolver,
+            string? azureMetadataPath = null)
         {
             bool hasThumbprint = !string.IsNullOrEmpty(signing.Thumbprint);
             bool hasPfx        = !string.IsNullOrEmpty(signing.Pfx);
+            bool hasAzure      = signing.Azure != null;
 
-            if (!hasThumbprint && !hasPfx)
+            int count = (hasThumbprint ? 1 : 0) + (hasPfx ? 1 : 0) + (hasAzure ? 1 : 0);
+            if (count == 0)
                 throw new InvalidOperationException(
-                    "signing: requires either 'thumbprint' or 'pfx' to be specified.");
-            if (hasThumbprint && hasPfx)
+                    "signing: requires 'thumbprint', 'pfx', 'azure', or 'command' to be specified.");
+            if (count > 1)
                 throw new InvalidOperationException(
-                    "signing: specify either 'thumbprint' or 'pfx', not both.");
+                    "signing: specify exactly one of 'thumbprint', 'pfx', 'azure', or 'command'.");
 
             var sb = new StringBuilder("sign");
 
@@ -221,7 +297,7 @@ namespace AlliePack
             {
                 sb.Append($" /sha1 {signing.Thumbprint}");
             }
-            else
+            else if (hasPfx)
             {
                 string pfxPath = resolver.Resolve(signing.Pfx!);
                 sb.Append($" /f \"{pfxPath}\"");
@@ -230,6 +306,15 @@ namespace AlliePack
                     string password = resolver.Tokens.Substitute(signing.PfxPassword!);
                     sb.Append($" /p \"{password}\"");
                 }
+            }
+            else // azure
+            {
+                if (azureMetadataPath == null)
+                    throw new InvalidOperationException(
+                        "Internal: azureMetadataPath must be provided for azure signing.");
+                string dlibPath = FindDlib(signing.Azure!.DlibPath, resolver);
+                sb.Append($" /dlib \"{dlibPath}\"");
+                sb.Append($" /dmdf \"{azureMetadataPath}\"");
             }
 
             sb.Append(" /fd sha256");
@@ -244,6 +329,46 @@ namespace AlliePack
             return sb.ToString();
         }
 
+        // -----------------------------------------------------------------------
+        // Azure Trusted Signing -- metadata.json generation
+        // -----------------------------------------------------------------------
+
+        private sealed class TempFile : IDisposable
+        {
+            internal string Path { get; }
+            internal TempFile(string path) { Path = path; }
+            public void Dispose() { try { File.Delete(Path); } catch { } }
+        }
+
+        private static TempFile WriteAzureMetadata(AzureSigningConfig azure, PathResolver resolver)
+        {
+            string json = BuildAzureMetadataJson(azure, resolver);
+            string path = System.IO.Path.GetTempFileName();
+            File.WriteAllText(path, json);
+            return new TempFile(path);
+        }
+
+        private static string BuildAzureMetadataJson(AzureSigningConfig azure, PathResolver resolver)
+        {
+            var props = new List<string>
+            {
+                $"  \"Endpoint\": \"{JsonEscape(resolver.Tokens.Substitute(azure.Endpoint))}\"",
+                $"  \"CodeSigningAccountName\": \"{JsonEscape(resolver.Tokens.Substitute(azure.Account))}\"",
+                $"  \"CertificateProfileName\": \"{JsonEscape(resolver.Tokens.Substitute(azure.CertificateProfile))}\"",
+            };
+            if (!string.IsNullOrEmpty(azure.CorrelationId))
+                props.Add($"  \"CorrelationId\": \"{JsonEscape(resolver.Tokens.Substitute(azure.CorrelationId!))}\"");
+
+            return "{\n" + string.Join(",\n", props) + "\n}";
+        }
+
+        private static string JsonEscape(string s) =>
+            s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r");
+
+        // -----------------------------------------------------------------------
+        // Process runners
+        // -----------------------------------------------------------------------
+
         private static bool RunSignTool(string tool, string args, out string errorText)
         {
             var psi = new ProcessStartInfo(tool, args)
@@ -256,6 +381,32 @@ namespace AlliePack
 
             using var proc = Process.Start(psi)
                 ?? throw new InvalidOperationException("Failed to start signtool.exe");
+
+            string stdout = proc.StandardOutput.ReadToEnd();
+            string stderr = proc.StandardError.ReadToEnd();
+            proc.WaitForExit();
+
+            errorText = proc.ExitCode != 0
+                ? (string.IsNullOrWhiteSpace(stderr) ? stdout : stderr)
+                : string.Empty;
+
+            return proc.ExitCode == 0;
+        }
+
+        // Runs an arbitrary shell command via cmd.exe.
+        // Used by signing.command: to support external signing tools.
+        private static bool RunCustomCommand(string command, out string errorText)
+        {
+            var psi = new ProcessStartInfo("cmd.exe", $"/c {command}")
+            {
+                UseShellExecute        = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError  = true,
+                CreateNoWindow         = true,
+            };
+
+            using var proc = Process.Start(psi)
+                ?? throw new InvalidOperationException("Failed to start signing command.");
 
             string stdout = proc.StandardOutput.ReadToEnd();
             string stderr = proc.StandardError.ReadToEnd();

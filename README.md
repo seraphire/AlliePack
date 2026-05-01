@@ -18,6 +18,7 @@ AlliePack is a YAML-driven MSI installer builder built on **WixSharp** and **WiX
 - **Registry keys and values**
 - **Environment variables** (set/remove on install/uninstall)
 - **Windows services** (install, start, stop, remove)
+- **Code signing** -- sign the MSI and packaged files with `signtool.exe`; supports cert store (thumbprint), PFX, Azure Trusted Signing, or any custom signing tool
 - **Release flags** for conditional configuration (perUser vs. perMachine builds, etc.)
 
 ## Prerequisites
@@ -330,6 +331,52 @@ wixToolsPath: "C:/tools/wix5/bin"
 
 Can also be set via the `WIXSHARP_WIXLOCATION` environment variable (takes effect when `wixToolsPath` is not set in the config).
 
+### `signing`
+
+Sign the built MSI (and optionally the packaged files) with `signtool.exe`.
+Exactly one signing provider is required; the rest of the config is unaffected
+when this block is omitted.
+
+See **[docs/signing.md](docs/signing.md)** for the full reference including
+Azure Trusted Signing, per-file signing, diagnostic output, and local testing.
+
+**Certificate store (thumbprint):**
+```yaml
+signing:
+  thumbprint: "ABCDEF1234567890ABCDEF1234567890ABCDEF12"
+  timestampUrl: "http://timestamp.digicert.com"
+```
+
+**PFX file** (inject password at build time):
+```yaml
+signing:
+  pfx: "certs/MyApp.pfx"
+  pfxPassword: "[SIGN_PASSWORD]"    # --define SIGN_PASSWORD=$(SIGN_PASSWORD)
+  timestampUrl: "http://timestamp.digicert.com"
+```
+
+**Azure Trusted Signing:**
+```yaml
+signing:
+  azure:
+    endpoint: "https://eus.codesigning.azure.net"
+    account: "MySigningAccount"
+    certificateProfile: "MyProfile"
+    dlibPath: 'C:\Tools\x64\Azure.CodeSigning.Dlib.dll'
+  timestampUrl: "http://timestamp.acs.microsoft.com"
+```
+
+**Sign packaged files before WiX packages them** (add a `files:` subsection to any provider):
+```yaml
+signing:
+  thumbprint: "ABCDEF1234..."
+  timestampUrl: "http://timestamp.digicert.com"
+  files:
+    mode: unsigned                  # skip files already signed (default)
+    include: ["*.exe", "*.dll"]
+    exclude: ["*.resources.dll"]
+```
+
 ### `wix`
 
 Raw WiX XML escape hatch for anything AlliePack doesn't cover natively.
@@ -376,6 +423,7 @@ src/AlliePack/
 - [x] `condition: notExists` -- install config files on first install only
 - [x] Flexible version sourcing (literal, file, git-tag)
 - [x] Raw WiX XML escape hatch (`wix.fragments`)
+- [x] Code signing (MSI + per-file; thumbprint, PFX, Azure Trusted Signing, custom command)
 - [ ] Optional installer features (component selection)
 - [ ] Modular YAML includes
 
