@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Xml.Linq;
 using WixSharp;
 using WixSharp.CommonTasks;
@@ -110,6 +111,15 @@ namespace AlliePack
                 allFiles.AddRange(ProcessElement(element));
 
             // Build WixSharp Feature objects and collect feature-tagged files
+            var duplicateIds = _config.Features
+                .GroupBy(f => f.Id, StringComparer.OrdinalIgnoreCase)
+                .Where(g => g.Count() > 1)
+                .Select(g => g.Key)
+                .ToList();
+            if (duplicateIds.Any())
+                throw new InvalidOperationException(
+                    $"Duplicate feature id(s) in features: block: {string.Join(", ", duplicateIds)}. Each id must be unique.");
+
             var wixFeatures = new Dictionary<string, Feature>(StringComparer.OrdinalIgnoreCase);
             foreach (var fc in _config.Features)
             {
@@ -174,22 +184,10 @@ namespace AlliePack
             bool is64 = _config.Product.Platform.Equals("x64", StringComparison.OrdinalIgnoreCase) || 
                         _config.Product.Platform.Equals("arm64", StringComparison.OrdinalIgnoreCase);
 
-            if (installPath.StartsWith("[ProgramFilesFolder]", StringComparison.OrdinalIgnoreCase))
-            {
-                // If they explicitly used [ProgramFilesFolder] but platform is x64, should we switch it? 
-                // Maybe not, they might want x86 folder. 
-                // But [ProgramFiles] is our own alias, so we can be smart.
-            }
-
             if (installPath.StartsWith("[ProgramFiles]\\", StringComparison.OrdinalIgnoreCase))
             {
                 string pfFolder = is64 ? "[ProgramFiles64Folder]" : "[ProgramFilesFolder]";
                 installPath = pfFolder + "\\" + installPath.Substring("[ProgramFiles]\\".Length);
-            }
-            else if (installPath.StartsWith("[ProgramFilesFolder]\\", StringComparison.OrdinalIgnoreCase) && is64)
-            {
-                // The user explicitly used [ProgramFilesFolder] but they are in x64 mode.
-                // We'll trust them, but if they want the standard behavior for AnyCPU we can warn.
             }
 
             if (!installPath.Contains("[") && !Path.IsPathRooted(installPath))
@@ -734,16 +732,20 @@ namespace AlliePack
         private bool IsSameFile(string path1, string path2)
         {
             if (path1.Equals(path2, StringComparison.OrdinalIgnoreCase)) return true;
-            
+
             var fi1 = new FileInfo(path1);
             var fi2 = new FileInfo(path2);
 
             if (!fi1.Exists || !fi2.Exists) return false;
             if (fi1.Length != fi2.Length) return false;
 
-            // For AlliePack purposes, same size and name is usually the same file from different build folders.
-            // A more robust check would be MD5, but size is a good heuristic for now.
-            return true;
+            using var sha = SHA256.Create();
+            using var s1 = System.IO.File.OpenRead(path1);
+            using var s2 = System.IO.File.OpenRead(path2);
+            var h1 = sha.ComputeHash(s1);
+            sha.Initialize();
+            var h2 = sha.ComputeHash(s2);
+            return h1.SequenceEqual(h2);
         }
 
         /// <summary>
