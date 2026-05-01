@@ -179,8 +179,9 @@ namespace AlliePack
                 process.WaitForExit();
                 return process.ExitCode == 0 ? output : null;
             }
-            catch
+            catch (Exception ex)
             {
+                Console.WriteLine($"Warning: git version resolution failed ({ex.GetType().Name}: {ex.Message}); version will fall back to commit count.");
                 return null;
             }
         }
