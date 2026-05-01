@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Microsoft.Extensions.FileSystemGlobbing;
+using Microsoft.Extensions.FileSystemGlobbing.Abstractions;
 
 namespace AlliePack
 {
@@ -105,17 +107,28 @@ namespace AlliePack
         {
             string resolvedPattern = Resolve(pattern);
 
-            if (resolvedPattern.Contains("**"))
+            if (resolvedPattern.IndexOfAny(new[] { '*', '?' }) >= 0)
             {
-                int idx = resolvedPattern.IndexOf("**", StringComparison.Ordinal);
-                string baseDir = resolvedPattern.Substring(0, idx).TrimEnd('\\', '/');
-                string filePattern = resolvedPattern.Substring(idx + 2).TrimStart('\\', '/');
-                if (string.IsNullOrEmpty(filePattern)) filePattern = "*";
+                // Find the base directory: everything up to the last separator before the first glob char.
+                string normalized = resolvedPattern.Replace('\\', '/');
+                int firstGlob = normalized.IndexOfAny(new[] { '*', '?' });
+                int lastSep = normalized.LastIndexOf('/', firstGlob);
+
+                string baseDir = lastSep >= 0 ? resolvedPattern.Substring(0, lastSep) : Directory.GetCurrentDirectory();
+                string relativePattern = lastSep >= 0 ? normalized.Substring(lastSep + 1) : normalized;
 
                 if (!Directory.Exists(baseDir)) return new List<(string, string)>();
 
-                return Directory.GetFiles(baseDir, filePattern, SearchOption.AllDirectories)
-                    .Select(f => (f, f.Substring(baseDir.Length).TrimStart('\\', '/')))
+                var matcher = new Matcher();
+                matcher.AddInclude(relativePattern);
+                var result = matcher.Execute(new DirectoryInfoWrapper(new DirectoryInfo(baseDir)));
+
+                return result.Files
+                    .Select(f =>
+                    {
+                        string relativePath = f.Path.Replace('/', Path.DirectorySeparatorChar);
+                        return (Path.Combine(baseDir, relativePath), relativePath);
+                    })
                     .ToList();
             }
 
