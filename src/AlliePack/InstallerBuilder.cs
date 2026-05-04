@@ -777,7 +777,11 @@ namespace AlliePack
             string newPath = currentPath;
             if (!string.IsNullOrEmpty(element.FolderName))
             {
-                newPath = Path.Combine(currentPath, element.FolderName);
+                const string installDirPrefix = "[INSTALLDIR]";
+                if (element.FolderName.StartsWith(installDirPrefix, StringComparison.OrdinalIgnoreCase))
+                    newPath = element.FolderName.Substring(installDirPrefix.Length).TrimStart('/', '\\');
+                else
+                    newPath = Path.Combine(currentPath, element.FolderName);
             }
 
             if (element.Contents != null)
