@@ -777,7 +777,10 @@ namespace AlliePack
             string newPath = currentPath;
             if (!string.IsNullOrEmpty(element.FolderName))
             {
-                newPath = Path.Combine(currentPath, element.FolderName);
+                if (element.FolderName.StartsWith("["))
+                    newPath = element.FolderName;
+                else
+                    newPath = Path.Combine(currentPath, element.FolderName);
             }
 
             if (element.Contents != null)
