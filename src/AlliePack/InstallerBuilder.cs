@@ -633,6 +633,8 @@ namespace AlliePack
             }
 
             var shortcut = new FileShortcut(s.Name, folder) { Description = s.Description };
+            if (!string.IsNullOrEmpty(s.Icon))
+                shortcut.IconFile = _resolver.Resolve(s.Icon);
             wixFile.Shortcuts = (wixFile.Shortcuts ?? new FileShortcut[0]).Concat(new[] { shortcut }).ToArray();
         }
 
@@ -1415,6 +1417,21 @@ namespace AlliePack
                     else
                         evScope = "user";
                     Console.WriteLine($"  [{evScope}] {ev.Name} = {ev.Value.Resolve(_activeFlags)}");
+                }
+            }
+
+            if (_config.Shortcuts.Any())
+            {
+                Console.WriteLine("Shortcuts:");
+                foreach (var s in _config.Shortcuts)
+                {
+                    string folder = ResolveFolder(s.Folder, isMachineReport);
+                    Console.WriteLine($"  [{s.Name}]  folder={folder}");
+                    Console.WriteLine($"    target: {s.Target}");
+                    if (!string.IsNullOrEmpty(s.Description))
+                        Console.WriteLine($"    description: {s.Description}");
+                    if (!string.IsNullOrEmpty(s.Icon))
+                        Console.WriteLine($"    icon: {s.Icon}");
                 }
             }
 
