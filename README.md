@@ -424,7 +424,7 @@ src/AlliePack/
 - [x] Flexible version sourcing (literal, file, git-tag)
 - [x] Raw WiX XML escape hatch (`wix.fragments`)
 - [x] Code signing (MSI + per-file; thumbprint, PFX, Azure Trusted Signing, custom command)
-- [ ] Optional installer features (component selection)
+- [x] Optional installer features (component selection)
 - [ ] Modular YAML includes
 
 ## License
