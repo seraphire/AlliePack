@@ -1,0 +1,16 @@
+## .NET build artifacts
+bin/
+obj/
+
+## VS / IDE
+.vs/
+*.user
+*.suo
+*.lock.json
+
+## NuGet / packages restored locally
+packages/
+
+## TestResults (xunit, vstest)
+TestResults/
+*.trx
