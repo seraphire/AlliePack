@@ -48,14 +48,14 @@ allie-pack.yaml
       +-- SolutionResolver.cs Resolves Visual Studio solution/project outputs
       |
       v
-  WixSharp / WiX v4
+  WixSharp / WiX v5
       |
       v
   MyApp.msi
 ```
 
 **Runtime:** .NET Framework 4.8.1
-**Installer backend:** WixSharp_wix4 v2.12.3 / WiX Toolset v4
+**Installer backend:** WixSharp_wix4 v2.12.3 / WiX Toolset v5 (5.0.2)
 **YAML parser:** YamlDotNet v16
 **CLI parser:** CommandLineParser v2.9
 
@@ -148,14 +148,16 @@ A list of `StructureElement` entries defining the INSTALLDIR file tree.
 
 | Field | Type | Notes |
 |---|---|---|
-| `folder` | string | Creates a subdirectory under the current path |
+| `folder` | string | Creates a subdirectory under the current path. A `[WixProperty]` prefix (e.g. `[INSTALLDIR]`) anchors the path absolutely from that root. |
 | `source` | string | Glob pattern; supports `alias:path` and `**` recursive glob |
-| `solution` | string | Path to a `.sln` file; resolves build outputs |
+| `solution` | string | Path to a `.sln` or `.slnx` file; resolves build outputs |
 | `project` | string | Path to a `.csproj`/`.vbproj` file |
 | `configuration` | string | Build configuration. Default: `Release` |
-| `platform` | string | Build platform. Default: `Any CPU` |
+| `platform` | string | Build platform. Default: `AnyCPU` |
+| `includeProjects` | list | Whitelist of project names to include from a solution |
 | `excludeFiles` | list | Glob patterns to exclude from matched files |
 | `excludeProjects` | list | Project names to exclude from solution resolve |
+| `onEmpty` | string | Behavior when no files match: `warn` (default), `error`, `ignore` |
 | `contents` | list | Nested `StructureElement` entries |
 
 **Glob tokens available in `source:`:**
@@ -248,6 +250,7 @@ directories:
 | `id` | string | Group name (for logging) |
 | `destinationDir` | string | References a `directories:` `id` |
 | `condition` | string | `notExists` — skip if destination file already present |
+| `permanent` | bool | Keep files on uninstall (default: false) |
 | `files` | list | List of `{ source, rename? }` entries |
 
 ### 5.8 `releaseFlags:` and `defaultActiveFlags:`
@@ -272,7 +275,7 @@ installScope:
 ```
 
 Conditional maps are supported on: `product.installScope`, `product.installDir`,
-`directories[].path`, `environment[].scope`, `environment[].value`.
+`directories[].path`, `environment[].scope`, `environment[].value`, `registry[].value`.
 
 ### 5.9 `signing:`
 

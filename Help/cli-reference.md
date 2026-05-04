@@ -65,6 +65,23 @@ AlliePack.exe allie-pack.yaml --verbose
 
 Verbose mode is especially useful when debugging path resolution or signing issues.
 
+### `--debug`
+
+Enable deep diagnostic output. Implies `--verbose` and additionally prints:
+
+- Resolved WiX tool paths (`WixSharpToolDir`, `WixExtensionsDir`, `DtfWindowsInstaller`)
+- Fully expanded product config values (name, version, platform, install scope, upgrade code)
+- All alias and path token expansions
+- Active release flags
+- Per-file source-to-destination mappings after glob expansion
+- Shortcut target resolution with full `fileMap` dump on miss
+
+```
+AlliePack.exe allie-pack.yaml --debug
+```
+
+Use `--debug` when `--verbose` is not enough — for example, when a file is missing from the installer, a shortcut target is not found, or a token is not resolving as expected.
+
 ### `-D`, `--define KEY=VALUE`
 
 Define a named token that can be referenced anywhere in the YAML as `[KEY]`. Overrides any matching entry in the `paths:` block. Repeatable.

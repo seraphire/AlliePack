@@ -98,7 +98,7 @@ List of `StructureElement` entries defining the installed file tree under `INSTA
 |---|---|---|
 | `folder` | string | Creates a subdirectory. Omit for files at the current level. |
 | `source` | string | File path or glob. Supports `alias:pattern` and `**` recursive glob. |
-| `solution` | string | Path to a `.sln` file. Resolves all project build outputs. |
+| `solution` | string | Path to a `.sln` or `.slnx` file. Resolves all project build outputs. Both classic `.sln` and the VS 2022 17.12+ XML solution format (`.slnx`) are supported. |
 | `project` | string | Path to a `.csproj` or `.vbproj` file. Resolves build outputs. |
 | `configuration` | string | Build configuration for solution/project resolve. Default: `Release` |
 | `platform` | string | Build platform for solution/project resolve. Default: `AnyCPU` |
@@ -180,10 +180,11 @@ Variables are removed on uninstall.
 | `arguments` | string | Command-line arguments |
 | `account` | string | `LocalSystem` (default), `LocalService`, `NetworkService`, or `DOMAIN\user` |
 | `password` | string | Password for domain accounts only |
-| `start` | string | `auto` (default), `demand` / `manual`, `disabled` |
+| `start` | string | `auto` (default), `demand` / `manual`, `disabled`, `boot`, `system` |
 | `type` | string | `ownProcess` (default) or `shareProcess` |
 | `errorControl` | string | `ignore`, `normal` (default), `critical` |
 | `delayedAutoStart` | bool | Delay startup (auto-start services only) |
+| `interactive` | bool | Allow service to interact with the desktop (legacy; requires `LocalSystem` account) |
 | `onFailure` | block | Failure recovery actions (see below) |
 | `dependsOn` | list | Service or group names this service depends on |
 
@@ -361,6 +362,7 @@ Available in `source:`, `aliases:`, `paths:`, and most string fields.
 | `[YamlDir]` | Directory containing the YAML config file |
 | `[GitRoot]` | Root of the nearest git repository (walks up from YAML dir) |
 | `[CurrentDir]` | Working directory when AlliePack is invoked |
+| `[ProgramFiles]` | Build-time shorthand for `installDir`: resolves to `[ProgramFiles64Folder]` on x64/arm64, `[ProgramFilesFolder]` on x86 |
 | `[KEY]` | Value of `--define KEY=VALUE` or `paths.KEY` |
 
 WiX install-time properties (not build-time tokens) are also valid in path and value fields where noted:
