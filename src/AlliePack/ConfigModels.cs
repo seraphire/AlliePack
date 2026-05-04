@@ -692,9 +692,6 @@ namespace AlliePack
         [YamlMember(Alias = "folder")]
         public string? FolderName { get; set; }
 
-        [YamlMember(Alias = "destination")]
-        public string? Destination { get; set; }
-
         [YamlMember(Alias = "source")]
         public string? Source { get; set; }
 
