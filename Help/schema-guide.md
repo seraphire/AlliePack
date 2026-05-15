@@ -112,12 +112,12 @@ These are replaced first, before any other resolution:
 
 These three are always available. `[GitRoot]` falls back to `[YamlDir]` if there's no git repository.
 
-### User-defined paths and defines
+### User-defined variables and defines
 
-Values in `paths:` define custom tokens available as `[name]`. Command-line `--define KEY=VALUE` overrides any `paths.KEY` with the same name.
+Values in `variables:` define custom tokens available as `[name]`. Command-line `--define KEY=VALUE` overrides any `variables.KEY` with the same name.
 
 ```yaml
-paths:
+variables:
   srcRoot: "[CurrentDir]"       # default: wherever you run AlliePack from
   version: "1.0.0.0"
 ```

@@ -84,7 +84,7 @@ Use `--debug` when `--verbose` is not enough — for example, when a file is mis
 
 ### `-D`, `--define KEY=VALUE`
 
-Define a named token that can be referenced anywhere in the YAML as `[KEY]`. Overrides any matching entry in the `paths:` block. Repeatable.
+Define a named token that can be referenced anywhere in the YAML as `[KEY]`. Overrides any matching entry in the `variables:` block. Repeatable.
 
 ```
 # Single define:

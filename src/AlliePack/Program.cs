@@ -82,8 +82,8 @@ namespace AlliePack
                 if (activeFlags.Any() && options.IsVerbose)
                     Console.WriteLine($"  active flags: {string.Join(", ", activeFlags)}");
 
-                // defines overlay the paths: block; command-line always wins.
-                var resolver = new PathResolver(configPath, config.Aliases, config.Paths, defines);
+                // defines overlay the variables: block; command-line always wins.
+                var resolver = new PathResolver(configPath, config.Aliases, config.Variables, defines);
                 var solutionResolver = new SolutionResolver(resolver, options.Debug);
                 var builder = new InstallerBuilder(config, resolver, solutionResolver, options, activeFlags);
 

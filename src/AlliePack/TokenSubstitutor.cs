@@ -5,7 +5,7 @@ namespace AlliePack
 {
     /// <summary>
     /// Replaces [KEY] tokens in arbitrary string values using the merged
-    /// paths: / --define dictionary and the built-in tokens ([YamlDir],
+    /// variables: / --define dictionary and the built-in tokens ([YamlDir],
     /// [GitRoot], [CurrentDir]).
     ///
     /// Unlike PathResolver, this class performs no path normalization, so it

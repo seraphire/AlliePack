@@ -21,7 +21,7 @@ namespace AlliePack.Tests
             return new PathResolver(
                 yamlPath,
                 aliases: new Dictionary<string, string>(),
-                paths:   new Dictionary<string, string>());
+                variables: new Dictionary<string, string>());
         }
 
         // Returns the path to signtool.exe, or null if it isn't available.

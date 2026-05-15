@@ -17,7 +17,7 @@ namespace AlliePack.Tests
             return new PathResolver(
                 yamlPath,
                 aliases: new Dictionary<string, string>(),
-                paths:   new Dictionary<string, string>(),
+                variables: new Dictionary<string, string>(),
                 defines: defines);
         }
 

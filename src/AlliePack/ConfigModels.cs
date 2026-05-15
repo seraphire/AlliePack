@@ -87,15 +87,23 @@ namespace AlliePack
     //
     // A YAML field that may be either a plain scalar or a file-extraction block:
     //
-    //   # Scalar form:
+    //   # Scalar form (literal or token-substituted):
     //   version: "1.0.0.0"
+    //   version: "[version]"          # filled by --define version=1.0.0 on the CLI
     //
     //   # File form (reads FileVersionInfo from the built binary):
     //   version:
     //     file: "bin:MyApp.exe"
     //     source: "file-version"     # or "product-version" (default: file-version)
     //
+    //   # Git-tag form:
+    //   version:
+    //     source: git-tag
+    //     tagPrefix: v
+    //
     // Call Resolve(resolver) to get the effective string value.
+    // Scalar values are passed through the token substitutor, so [KEY] tokens
+    // defined via --define KEY=VALUE on the command line are expanded.
     // -----------------------------------------------------------------------
 
     public class VersionSource
@@ -119,7 +127,7 @@ namespace AlliePack
 
         public string Resolve(PathResolver resolver)
         {
-            if (_literal != null) return _literal;
+            if (_literal != null) return resolver.Tokens.Substitute(_literal);
             if (_source.Equals("git-tag", StringComparison.OrdinalIgnoreCase))
                 return ResolveFromGit(resolver.WorkingDirectory);
             string path = resolver.Resolve(_file!);
@@ -241,11 +249,11 @@ namespace AlliePack
         [YamlMember(Alias = "aliases")]
         public Dictionary<string, string> Aliases { get; set; } = new();
 
-        // Named build-machine paths, usable as [name] tokens anywhere in the config.
+        // Named user-defined tokens, usable as [name] anywhere in the config.
         // Values may contain built-in tokens ([GitRoot], [YamlDir], [CurrentDir]).
         // Any entry can be overridden on the command line with --define name=value.
-        [YamlMember(Alias = "paths")]
-        public Dictionary<string, string> Paths { get; set; } = new();
+        [YamlMember(Alias = "variables")]
+        public Dictionary<string, string> Variables { get; set; } = new();
 
         [YamlMember(Alias = "structure")]
         public List<StructureElement> Structure { get; set; } = new();
