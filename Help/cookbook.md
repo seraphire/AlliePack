@@ -86,10 +86,10 @@ If `help/` contains `images/logo.png` and `pages/intro.html`, they install at `I
 
 ## Overriding paths for CI
 
-The standard pattern: use `[CurrentDir]` as a default in `paths:`, then override it in CI with `--define`:
+The standard pattern: use `[CurrentDir]` as a default in `variables:`, then override it in CI with `--define`:
 
 ```yaml
-paths:
+variables:
   srcRoot: "[CurrentDir]"     # works locally when run from the source directory
 
 aliases:
@@ -111,7 +111,7 @@ AlliePack allie-pack.yaml
   displayName: Build MSI
 ```
 
-`--define` always wins over `paths:`, so you never need to edit the YAML for CI.
+`--define` always wins over `variables:`, so you never need to edit the YAML for CI.
 
 ---
 

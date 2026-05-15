@@ -70,14 +70,14 @@ namespace AlliePack.Tests
         private static PathResolver Make(
             string? yamlDir = null,
             Dictionary<string, string>? aliases = null,
-            Dictionary<string, string>? paths = null,
+            Dictionary<string, string>? variables = null,
             Dictionary<string, string>? defines = null)
         {
             string yamlPath = Path.Combine(yamlDir ?? Path.GetTempPath(), "test.yaml");
             return new PathResolver(
                 yamlPath,
                 aliases ?? new Dictionary<string, string>(),
-                paths   ?? new Dictionary<string, string>(),
+                variables ?? new Dictionary<string, string>(),
                 defines);
         }
 
@@ -105,7 +105,7 @@ namespace AlliePack.Tests
 
         [Fact] public void NamedToken_IsSubstituted()
         {
-            var resolver = Make(paths: new Dictionary<string, string> { ["Bin"] = @"C:\build\bin" });
+            var resolver = Make(variables: new Dictionary<string, string> { ["Bin"] = @"C:\build\bin" });
             string result = resolver.Resolve(@"[Bin]\MyApp.exe");
             Assert.Equal(@"C:\build\bin\MyApp.exe", result);
         }
@@ -113,7 +113,7 @@ namespace AlliePack.Tests
         [Fact] public void DefineOverridesPath()
         {
             var resolver = Make(
-                paths:   new Dictionary<string, string> { ["Bin"] = @"C:\default\bin" },
+                variables: new Dictionary<string, string> { ["Bin"] = @"C:\default\bin" },
                 defines: new Dictionary<string, string> { ["Bin"] = @"C:\override\bin" });
             Assert.Equal(@"C:\override\bin\app.exe", resolver.Resolve(@"[Bin]\app.exe"));
         }
@@ -150,7 +150,7 @@ namespace AlliePack.Tests
         private PathResolver MakeResolver() => new PathResolver(
             Path.Combine(_tempDir, "test.yaml"),
             aliases: new Dictionary<string, string>(),
-            paths:   new Dictionary<string, string>());
+            variables: new Dictionary<string, string>());
 
         private void Touch(string relativePath)
         {

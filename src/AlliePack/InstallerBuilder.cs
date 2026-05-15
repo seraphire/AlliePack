@@ -96,10 +96,10 @@ namespace AlliePack
                 Console.WriteLine($"  [debug] aliases ({_config.Aliases.Count}):");
                 foreach (var a in _config.Aliases)
                     Console.WriteLine($"  [debug]   {a.Key}: -> {_resolver.Resolve(a.Value)}");
-                if (_config.Paths.Count > 0)
+                if (_config.Variables.Count > 0)
                 {
-                    Console.WriteLine($"  [debug] paths ({_config.Paths.Count}):");
-                    foreach (var p in _config.Paths)
+                    Console.WriteLine($"  [debug] variables ({_config.Variables.Count}):");
+                    foreach (var p in _config.Variables)
                         Console.WriteLine($"  [debug]   [{p.Key}] = {p.Value} -> {_resolver.Resolve(p.Value)}");
                 }
                 Console.WriteLine($"  [debug] active flags: [{string.Join(", ", _activeFlags)}]");

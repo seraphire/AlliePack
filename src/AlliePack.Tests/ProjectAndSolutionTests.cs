@@ -75,7 +75,7 @@ namespace AlliePack.Tests
             return new PathResolver(
                 yamlPath,
                 aliases: new Dictionary<string, string>(),
-                paths:   new Dictionary<string, string>());
+                variables: new Dictionary<string, string>());
         }
 
         // Skip helper: returns true if the fixture reports a failed build.

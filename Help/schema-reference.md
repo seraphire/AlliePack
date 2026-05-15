@@ -9,7 +9,7 @@ Complete field reference for `allie-pack.yaml`. For conceptual explanations of h
 ```yaml
 product:          # required
 aliases:          # optional
-paths:            # optional
+variables:        # optional
 structure:        # optional (at least one file source expected)
 shortcuts:        # optional
 environment:      # optional
@@ -78,14 +78,15 @@ Values may contain built-in tokens. See [Token reference](#built-in-tokens).
 
 ---
 
-## `paths:`
+## `variables:`
 
 Named tokens available as `[name]` throughout the config. Values may contain built-in tokens. Can be overridden on the command line with `--define name=value`.
 
 ```yaml
-paths:
+variables:
   srcRoot: "[CurrentDir]"
   buildOutput: "[srcRoot]/bin/Release"
+  buildConfig: "Release"     # also usable in `configuration:` fields
 ```
 
 ---
@@ -355,7 +356,7 @@ wix:
 
 ## Built-in tokens
 
-Available in `source:`, `aliases:`, `paths:`, and most string fields.
+Available in `source:`, `aliases:`, `variables:`, and most string fields.
 
 | Token | Resolves to |
 |---|---|

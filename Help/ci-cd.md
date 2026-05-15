@@ -246,7 +246,7 @@ Use the `azure/trusted-signing-action` or pass credentials via environment varia
 **Use `[CurrentDir]` or `[GitRoot]` for local builds; override with `--define` for CI.** This pattern means the YAML works correctly both locally and in CI without modification:
 
 ```yaml
-paths:
+variables:
   srcRoot: "[GitRoot]"     # works locally
 ```
 

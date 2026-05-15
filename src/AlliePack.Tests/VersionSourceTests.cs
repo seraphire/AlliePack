@@ -21,7 +21,7 @@ namespace AlliePack.Tests
             return new PathResolver(
                 yamlPath,
                 aliases: new Dictionary<string, string>(),
-                paths:   new Dictionary<string, string>());
+                variables: new Dictionary<string, string>());
         }
 
         private static AlliePackConfig ParseConfig(string yaml)
@@ -57,6 +57,50 @@ product:
 ");
             string result = config.Product.Version.Resolve(MakeResolver());
             Assert.Equal("2.5.0.0", result);
+        }
+
+        [Fact]
+        public void Literal_WithToken_ExpandedFromDefine()
+        {
+            // version: "[version]" in YAML + --define version=26.5.1401 on CLI
+            var resolver = new PathResolver(
+                Path.Combine(Path.GetTempPath(), "test.yaml"),
+                aliases: new Dictionary<string, string>(),
+                variables: new Dictionary<string, string>(),
+                defines: new Dictionary<string, string> { ["version"] = "26.5.1401" });
+
+            var vs = new VersionSource("[version]");
+            string result = vs.Resolve(resolver);
+            Assert.Equal("26.5.1401", result);
+        }
+
+        [Fact]
+        public void Literal_WithUnknownToken_PassesThroughUnchanged()
+        {
+            // If the token isn't defined, leave it as-is (WiX will then reject
+            // it with a clear error rather than silently using a wrong version).
+            var vs = new VersionSource("[version]");
+            string result = vs.Resolve(MakeResolver());
+            Assert.Equal("[version]", result);
+        }
+
+        [Fact]
+        public void Literal_WithToken_ParsedFromYaml_ExpandedFromDefine()
+        {
+            var config = ParseConfig(@"
+product:
+  name: Test
+  upgradeCode: 00000000-0000-0000-0000-000000000001
+  version: '[version]'
+");
+            var resolver = new PathResolver(
+                Path.Combine(Path.GetTempPath(), "test.yaml"),
+                aliases: new Dictionary<string, string>(),
+                variables: new Dictionary<string, string>(),
+                defines: new Dictionary<string, string> { ["version"] = "26.5.1401" });
+
+            string result = config.Product.Version.Resolve(resolver);
+            Assert.Equal("26.5.1401", result);
         }
 
         // -----------------------------------------------------------------------
