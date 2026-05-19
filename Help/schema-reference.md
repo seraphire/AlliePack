@@ -105,7 +105,7 @@ List of `StructureElement` entries defining the installed file tree under `INSTA
 | `platform` | string | Build platform for solution/project resolve. Default: `AnyCPU` |
 | `includeProjects` | list | Whitelist of project names to include from a solution. |
 | `excludeProjects` | list | Project names to exclude from a solution. |
-| `excludeFiles` | list | Glob patterns applied to the resolved file list. |
+| `excludeFiles` | list | Glob patterns applied to the resolved file list. **Defaults always excluded:** `**/.vs/**`, `**/.git/**`, `**/*.suo`, `**/*.user` (VS scratch state and user-specific files that should never ship in an installer). Your patterns are additive on top of these. |
 | `onEmpty` | string | What to do if no files are found: `warn` (default), `error`, or `ignore`. |
 | `contents` | list | Nested `StructureElement` list for subdirectories. |
 
@@ -181,7 +181,8 @@ Variables are removed on uninstall.
 | `arguments` | string | Command-line arguments |
 | `account` | string | `LocalSystem` (default), `LocalService`, `NetworkService`, or `DOMAIN\user` |
 | `password` | string | Password for domain accounts only |
-| `start` | string | `auto` (default), `demand` / `manual`, `disabled`, `boot`, `system` |
+| `start` | string | `auto` (default), `demand` / `manual`, `disabled`, `boot`, `system`. Controls SCM startup type (what happens at next reboot). |
+| `startOnInstall` | bool | `true` (default). When `false`, the MSI registers the service but does NOT start it during install. Use for services that need post-install configuration. |
 | `type` | string | `ownProcess` (default) or `shareProcess` |
 | `errorControl` | string | `ignore`, `normal` (default), `critical` |
 | `delayedAutoStart` | bool | Delay startup (auto-start services only) |

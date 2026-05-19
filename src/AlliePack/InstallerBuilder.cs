@@ -552,7 +552,7 @@ namespace AlliePack
                 Start        = ParseSvcStartType(svc.Start),
                 Type         = ParseSvcType(svc.Type),
                 ErrorControl = ParseSvcErrorControl(svc.ErrorControl),
-                StartOn      = SvcEvent.Install,
+                StartOn      = svc.StartOnInstall ? SvcEvent.Install : null,
                 StopOn       = SvcEvent.InstallUninstall_Wait,
                 RemoveOn     = SvcEvent.Uninstall_Wait,
             };

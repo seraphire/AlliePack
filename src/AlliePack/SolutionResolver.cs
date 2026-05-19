@@ -24,6 +24,20 @@ namespace AlliePack
 
         private void Log(string message) { if (_debug) Console.WriteLine($"  [debug] {message}"); }
 
+        // Patterns that are NEVER appropriate to ship in an installer, regardless
+        // of user configuration. Build outputs sometimes contain these as a
+        // side-effect of the build environment (e.g. Visual Studio's Copilot
+        // indexer dropping a .vs/ folder inside bin/), and there is no legitimate
+        // reason to package them. Applied to every project resolve in addition
+        // to any user-supplied excludeFiles patterns.
+        private static readonly string[] DefaultExcludePatterns = new[]
+        {
+            "**/.vs/**",      // VS scratch state, IntelliSense indices, Copilot caches
+            "**/.git/**",     // git metadata if a repo lives under bin somehow
+            "**/*.suo",       // VS solution user options (binary, user-specific)
+            "**/*.user",      // MSBuild .user files (user-specific overrides)
+        };
+
         public List<ResolvedFile> ResolveSolution(string solutionPath, string configuration, string platform, List<string> includeProjects, List<string> excludeProjects, List<string> excludeFiles)
         {
             var results = new List<ResolvedFile>();
@@ -88,6 +102,10 @@ namespace AlliePack
             // Collect files with globbing exclusions
             var matcher = new Matcher();
             matcher.AddInclude("**/*");
+            foreach (var pattern in DefaultExcludePatterns)
+            {
+                matcher.AddExclude(pattern);
+            }
             foreach (var pattern in excludeFiles)
             {
                 matcher.AddExclude(pattern);

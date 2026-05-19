@@ -645,6 +645,16 @@ namespace AlliePack
         [YamlMember(Alias = "start")]
         public string Start { get; set; } = "auto";
 
+        // When true (default), the MSI starts the service during install.
+        // Set to false for services that need post-install configuration
+        // before they can run -- the install completes cleanly with the
+        // service registered but stopped, and the operator starts it
+        // manually. Independent of Start: a service can be Start=auto +
+        // StartOnInstall=false (auto-start on next reboot, but not at
+        // install time).
+        [YamlMember(Alias = "startOnInstall")]
+        public bool StartOnInstall { get; set; } = true;
+
         // Service type: ownProcess (default) | shareProcess.
         [YamlMember(Alias = "type")]
         public string Type { get; set; } = "ownProcess";
