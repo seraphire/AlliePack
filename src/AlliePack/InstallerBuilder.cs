@@ -405,50 +405,73 @@ namespace AlliePack
             // -sw5437: suppress "no longer necessary to define standard directory" (WiX 6 advisory, WixSharp emits these)
             project.WixOptions = "-sw1044 -sw5437";
 
-            // Configure installer UI. Always use ManagedUI for a consistent look;
-            // include the licence dialog only when a license file is supplied.
-            var ui = new ManagedUI();
+            // Configure installer UI.
+            // ui: standard (default) -- built-in WiX dialog set; wix.exe supplies the dialogs,
+            //     no WixSharp WPF assembly (WixSharp.UI.CA.dll) is needed.
+            // ui: custom             -- WixSharp WPF EmbeddedUI; full WPF dialog stack.
             bool hasFeatures = _config.Features.Any();
-            if (!string.IsNullOrEmpty(_config.Product.LicenseFile))
-            {
+            bool hasLicense  = !string.IsNullOrEmpty(_config.Product.LicenseFile);
+            bool useCustomUi = string.Equals(_config.Ui, "custom", StringComparison.OrdinalIgnoreCase);
+
+            if (hasLicense)
                 project.LicenceFile = _resolver.Resolve(_config.Product.LicenseFile!);
-                if (hasFeatures)
-                    ui.InstallDialogs
-                        .Add<WelcomeDialog>()
-                        .Add<LicenceDialog>()
-                        .Add<InstallDirDialog>()
-                        .Add<FeaturesDialog>()
-                        .Add<ProgressDialog>()
-                        .Add<ExitDialog>();
+
+            if (useCustomUi)
+            {
+                // WixSharp WPF EmbeddedUI -- requires WixSharp.UI.CA.dll in the output directory.
+                var ui = new ManagedUI();
+                if (hasLicense)
+                {
+                    if (hasFeatures)
+                        ui.InstallDialogs
+                            .Add<WelcomeDialog>()
+                            .Add<LicenceDialog>()
+                            .Add<InstallDirDialog>()
+                            .Add<FeaturesDialog>()
+                            .Add<ProgressDialog>()
+                            .Add<ExitDialog>();
+                    else
+                        ui.InstallDialogs
+                            .Add<WelcomeDialog>()
+                            .Add<LicenceDialog>()
+                            .Add<InstallDirDialog>()
+                            .Add<ProgressDialog>()
+                            .Add<ExitDialog>();
+                }
                 else
-                    ui.InstallDialogs
-                        .Add<WelcomeDialog>()
-                        .Add<LicenceDialog>()
-                        .Add<InstallDirDialog>()
-                        .Add<ProgressDialog>()
-                        .Add<ExitDialog>();
+                {
+                    if (hasFeatures)
+                        ui.InstallDialogs
+                            .Add<WelcomeDialog>()
+                            .Add<InstallDirDialog>()
+                            .Add<FeaturesDialog>()
+                            .Add<ProgressDialog>()
+                            .Add<ExitDialog>();
+                    else
+                        ui.InstallDialogs
+                            .Add<WelcomeDialog>()
+                            .Add<InstallDirDialog>()
+                            .Add<ProgressDialog>()
+                            .Add<ExitDialog>();
+                }
+                ui.ModifyDialogs
+                    .Add<MaintenanceTypeDialog>()
+                    .Add<ProgressDialog>()
+                    .Add<ExitDialog>();
+                project.ManagedUI = ui;
             }
             else
             {
+                // Standard WiX built-in dialog set -- no WixSharp.UI.CA.dll required.
+                // WixUI_FeatureTree when features exist; WixUI_InstallDir when a license is
+                // present; WixUI_Minimal for the simple service-style case.
                 if (hasFeatures)
-                    ui.InstallDialogs
-                        .Add<WelcomeDialog>()
-                        .Add<InstallDirDialog>()
-                        .Add<FeaturesDialog>()
-                        .Add<ProgressDialog>()
-                        .Add<ExitDialog>();
+                    project.UI = WUI.WixUI_FeatureTree;
+                else if (hasLicense)
+                    project.UI = WUI.WixUI_InstallDir;
                 else
-                    ui.InstallDialogs
-                        .Add<WelcomeDialog>()
-                        .Add<InstallDirDialog>()
-                        .Add<ProgressDialog>()
-                        .Add<ExitDialog>();
+                    project.UI = WUI.WixUI_Minimal;
             }
-            ui.ModifyDialogs
-                .Add<MaintenanceTypeDialog>()
-                .Add<ProgressDialog>()
-                .Add<ExitDialog>();
-            project.ManagedUI = ui;
 
             // Raw WiX XML fragments -- escape hatch for anything AlliePack doesn't cover
             if (_config.Wix?.Fragments.Any() == true)
@@ -580,6 +603,17 @@ namespace AlliePack
             // determine where to write the WXS and CA DLLs.  BuildWxs does NOT invoke
             // wix.exe -- it produces only the XML source file.
             Compiler.BuildWxs(project, Compiler.OutputType.MSI);
+
+            // WixSharp unconditionally copies WixSharp.UI.CA.dll to the output directory
+            // even when ManagedUI is not set.  Remove it in standard-UI mode so the export
+            // artifact only contains files the WXS actually references.
+            bool exportUsesCustomUi = string.Equals(_config.Ui, "custom", StringComparison.OrdinalIgnoreCase);
+            if (!exportUsesCustomUi)
+            {
+                string uiCaDll = Path.Combine(exportDir, "WixSharp.UI.CA.dll");
+                if (System.IO.File.Exists(uiCaDll))
+                    System.IO.File.Delete(uiCaDll);
+            }
 
             // Detect which WiX extensions are required by scanning the generated WXS for
             // non-core namespaces.  Find each extension DLL on disk and copy it into the

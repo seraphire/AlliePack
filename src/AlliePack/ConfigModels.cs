@@ -297,6 +297,14 @@ namespace AlliePack
         [YamlMember(Alias = "signing")]
         public SigningConfig? Signing { get; set; }
 
+        /// <summary>
+        /// Installer UI type.
+        /// "standard" (default) -- built-in WiX dialog set; no WixSharp WPF dependency.
+        /// "custom"             -- WixSharp WPF EmbeddedUI (requires WixSharp.UI.CA.dll).
+        /// </summary>
+        [YamlMember(Alias = "ui")]
+        public string Ui { get; set; } = "standard";
+
         [YamlMember(Alias = "features")]
         public List<FeatureConfig> Features { get; set; } = new();
     }
