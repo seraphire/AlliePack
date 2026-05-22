@@ -164,7 +164,8 @@ namespace AlliePack
             if (!string.IsNullOrEmpty(resolvedInstallDir))
                 installPath = resolvedInstallDir;
             else
-                installPath = _config.Product.Manufacturer + "\\" + _config.Product.Name;
+                installPath = _resolver.Tokens.Substitute(_config.Product.Manufacturer)
+                            + "\\" + _resolver.Tokens.Substitute(_config.Product.Name);
 
             installPath = installPath.Replace('/', '\\');
             

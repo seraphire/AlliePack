@@ -1,0 +1,41 @@
+# token-passthrough feature test
+#
+# Verifies the ADR-0003 boundary: install-time tokens ([INSTALLDIR],
+# [ProgramMenuFolder], etc.) use [NAME] syntax and are resolved by Windows
+# Installer at install time.  AlliePack must NOT substitute them and must NOT
+# emit deprecation warnings for them.
+#
+# [NAME] tokens that are not in the compile-time token dictionary pass through
+# to WiX unchanged.  This test confirms that install-time tokens survive the
+# AlliePack build pipeline intact.
+#
+# Build:
+#   AlliePack.exe allie-pack.yaml --output output\token-passthrough.msi
+#
+# Report (confirm no deprecation warnings for [INSTALLDIR] etc.):
+#   AlliePack.exe allie-pack.yaml --report
+
+product:
+  name: "TokenPassthroughTest"
+  manufacturer: "AlliePack"
+  version: "1.0.0.0"
+  upgradeCode: "a1b2c3d4-0001-0002-0003-000000000080"
+  platform: "x64"
+  installScope: perMachine
+
+aliases:
+  here: "$(YamlDir)"
+
+structure:
+  - source: "here:app.exe"
+
+shortcuts:
+  - name: "Passthrough Test"
+    target: "[INSTALLDIR]\\app.exe"
+    description: "Shortcut using install-time [INSTALLDIR] token."
+    folder: "[ProgramMenuFolder]\\PassthroughTest"
+
+environment:
+  - name: "PASSTHROUGH_INSTALLDIR"
+    value: "[INSTALLDIR]"
+    scope: machine

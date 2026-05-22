@@ -1,0 +1,32 @@
+# builtin-tokens feature test
+#
+# Demonstrates: built-in compile-time tokens using the primary $(NAME) syntax.
+#
+#   $(YamlDir)    -- directory containing this Package Definition file
+#   $(CurrentDir) -- working directory when AlliePack is invoked
+#   $(GitRoot)    -- root of the git repository (if running inside one)
+#
+# Build:
+#   AlliePack.exe allie-pack.yaml --output output\builtin-tokens.msi
+#
+# Report:
+#   AlliePack.exe allie-pack.yaml --report
+
+product:
+  name: "BuiltinTokensTest"
+  manufacturer: "AlliePack"
+  version: "1.0.0.0"
+  upgradeCode: "a1b2c3d4-0001-0002-0003-000000000060"
+  platform: "x64"
+  installScope: perMachine
+
+aliases:
+  here: "$(YamlDir)"
+
+structure:
+  - source: "here:app.exe"
+
+environment:
+  - name: "BUILTIN_YAMLDIR"
+    value: "$(YamlDir)"
+    scope: machine

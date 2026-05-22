@@ -1,10 +1,9 @@
 # define-tokens feature test
 #
-# Demonstrates: --define / -D token substitution in YAML before parsing.
-#
-# Tokens use the [KEY] syntax and are replaced everywhere in the file.
-# This lets a single YAML template produce multiple variant MSIs without
-# conditional blocks or separate config files.
+# Demonstrates: --define / -D token substitution using the $(NAME) compile-time
+# token syntax.  Tokens are replaced everywhere in the file before the Package
+# is produced.  This lets a single Package Definition produce multiple variant
+# Packages without conditional blocks or separate configs.
 #
 # Common use cases:
 #   - Inject build-time version from CI (e.g. from git tag or build number)
@@ -21,14 +20,14 @@
 # Report (verify resolved values without building):
 #   AlliePack.exe allie-pack.yaml -D VERSION=2.1.0.0 EDITION=Community --report
 #
-# NOTE: Multiple tokens are passed space-separated after a single -D flag.
-# NOTE: Tokens in this file that match WiX runtime properties (e.g. [INSTALLDIR])
-# are intentionally NOT defined here, so they pass through to WiX unchanged.
+# NOTE: Install-time tokens such as [INSTALLDIR] use [NAME] syntax and are
+# resolved by Windows Installer at install time -- they are NOT compile-time
+# tokens and are intentionally left unchanged by AlliePack.
 
 product:
-  name: "DefineTest [EDITION]"
+  name: "DefineTest $(EDITION)"
   manufacturer: "AlliePack"
-  version: "[VERSION]"
+  version: "$(VERSION)"
   upgradeCode: "a1b2c3d4-0001-0002-0003-000000000050"
   platform: "x64"
   installScope: perMachine
@@ -41,11 +40,11 @@ structure:
 
 environment:
   - name: "DEFINETEST_EDITION"
-    value: "[EDITION]"
+    value: "$(EDITION)"
     scope: machine
 
 shortcuts:
-  - name: "DefineTest [EDITION]"
+  - name: "DefineTest $(EDITION)"
     target: "[INSTALLDIR]\\app.exe"
-    description: "DefineTest [EDITION] shortcut"
+    description: "DefineTest $(EDITION) shortcut"
     folder: startmenu

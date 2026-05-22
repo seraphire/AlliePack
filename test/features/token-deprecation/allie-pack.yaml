@@ -1,0 +1,41 @@
+# token-deprecation feature test
+#
+# Verifies that the legacy [NAME] compile-time token syntax still resolves
+# correctly (backward compatibility) but emits a deprecation warning.
+#
+# Expected behaviour:
+#   - Tokens resolve to the correct values (same as $(NAME) syntax)
+#   - AlliePack prints a deprecation warning for each [NAME] token used,
+#     once per token per build run
+#   - [INSTALLDIR] does NOT trigger a warning -- it is a WiX install-time
+#     token, not a compile-time token, and passes through to WiX unchanged
+#
+# Build:
+#   AlliePack.exe allie-pack.yaml -D EDITION=Legacy --output output\token-deprecation.msi
+#
+# Report (watch for deprecation warnings):
+#   AlliePack.exe allie-pack.yaml -D EDITION=Legacy --report
+
+product:
+  name: "DeprecationTest [EDITION]"
+  manufacturer: "AlliePack"
+  version: "1.0.0.0"
+  upgradeCode: "a1b2c3d4-0001-0002-0003-000000000070"
+  platform: "x64"
+  installScope: perMachine
+
+aliases:
+  here: "[YamlDir]"
+
+structure:
+  - source: "here:app.exe"
+
+environment:
+  - name: "DEPRECATED_EDITION"
+    value: "[EDITION]"
+    scope: machine
+
+shortcuts:
+  - name: "DeprecationTest [EDITION]"
+    target: "[INSTALLDIR]\\app.exe"
+    folder: startmenu
