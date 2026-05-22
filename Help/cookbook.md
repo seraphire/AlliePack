@@ -238,13 +238,13 @@ shortcuts:
     folder: "[ProgramMenuFolder]"
 ```
 
-For a scope-aware shortcut that works correctly with `installScope: both`:
+For a scope-aware shortcut that resolves to the correct Start Menu folder based on scope:
 
 ```yaml
 shortcuts:
   - name: "My App"
     target: "[INSTALLDIR]\\MyApp.exe"
-    folder: startmenu    # resolves to per-user or all-users Start Menu based on scope
+    folder: startmenu    # resolves to per-user or all-users Start Menu based on installScope
 ```
 
 ---
@@ -386,21 +386,7 @@ For PowerShell 7+, use `type: psmodules7` instead.
 
 ## Per-user and per-machine builds from one config
 
-Use `installScope: both` for the simplest case — AlliePack infers sensible path defaults:
-
-```yaml
-product:
-  name: "My App"
-  installScope: both
-```
-
-```
-# Build both targets:
-AlliePack.exe allie-pack.yaml --scope perUser    --output dist\MyApp-user.msi
-AlliePack.exe allie-pack.yaml --scope perMachine --output dist\MyApp-machine.msi
-```
-
-For finer control, use release flags with conditional maps:
+Use release flags with conditional maps to produce both variants from a single Package Definition:
 
 ```yaml
 releaseFlags:

@@ -15,12 +15,10 @@
 #                 [CommonStartupFolder]     (perMachine)
 #
 # Build:
-#   AlliePack.exe allie-pack.yaml --scope perUser    --output output\shortcut-folders-user.msi
-#   AlliePack.exe allie-pack.yaml --scope perMachine --output output\shortcut-folders-machine.msi
+#   AlliePack.exe allie-pack.yaml --output output\shortcut-folders.msi
 #
 # Report:
-#   AlliePack.exe allie-pack.yaml --scope perUser    --report
-#   AlliePack.exe allie-pack.yaml --scope perMachine --report
+#   AlliePack.exe allie-pack.yaml --report
 
 product:
   name: "ShortcutFoldersTest"
@@ -28,7 +26,7 @@ product:
   version: "1.0.0.0"
   upgradeCode: "a1b2c3d4-0001-0002-0003-000000000030"
   platform: "x64"
-  installScope: both
+  installScope: perMachine
 
 aliases:
   bin: "."

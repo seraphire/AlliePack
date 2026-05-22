@@ -154,30 +154,17 @@ namespace AlliePack
             var entities = new List<WixEntity>();
 
             // --- Scope resolution ---
-            // rawInstallScope: what the config says (perUser, perMachine, both)
-            // effectiveScope:  the actual MSI scope to build (perUser or perMachine)
             string rawInstallScope = _config.Product.InstallScope.Resolve(_activeFlags);
             string effectiveScope  = ComputeEffectiveScope(rawInstallScope);
             bool isMachine = effectiveScope.Equals("perMachine", StringComparison.OrdinalIgnoreCase);
 
             // --- installDir resolution ---
-            // Explicit installDir wins.  For 'both' with no explicit dir, apply smart defaults.
             string resolvedInstallDir = _config.Product.InstallDir?.Resolve(_activeFlags) ?? string.Empty;
             string installPath;
             if (!string.IsNullOrEmpty(resolvedInstallDir))
-            {
                 installPath = resolvedInstallDir;
-            }
-            else if (rawInstallScope.Equals("both", StringComparison.OrdinalIgnoreCase))
-            {
-                installPath = isMachine
-                    ? $"[ProgramFiles64Folder]\\{_config.Product.Manufacturer}\\{_config.Product.Name}"
-                    : $"[LocalAppDataFolder]\\Programs\\{_config.Product.Manufacturer}\\{_config.Product.Name}";
-            }
             else
-            {
                 installPath = _config.Product.Manufacturer + "\\" + _config.Product.Name;
-            }
 
             installPath = installPath.Replace('/', '\\');
             
@@ -536,9 +523,7 @@ namespace AlliePack
         {
             if (ev.Scope != null)
                 return ev.Scope.Resolve(_activeFlags);
-            if (rawInstallScope.Equals("both", StringComparison.OrdinalIgnoreCase))
-                return isMachine ? "machine" : "user";
-            return "user";
+            return isMachine ? "machine" : "user";
         }
 
         private ServiceInstaller BuildServiceInstaller(ServiceConfig svc)
@@ -1219,21 +1204,20 @@ namespace AlliePack
         // -----------------------------------------------------------------------
 
         /// <summary>
-        /// Converts a raw installScope value (perUser / perMachine / both) to the
-        /// effective scope for this build.  'both' defers to --scope, defaulting
-        /// to perUser when no override is supplied.
+        /// Validates and returns the install scope. Valid values are perUser and perMachine.
+        /// 'both' was removed in ADR-0004 -- use Flags to produce separate per-user and
+        /// per-machine Packages from a single Package Definition instead.
         /// </summary>
-        private string ComputeEffectiveScope(string rawInstallScope)
+        private static string ComputeEffectiveScope(string rawInstallScope)
         {
-            if (!rawInstallScope.Equals("both", StringComparison.OrdinalIgnoreCase))
-                return rawInstallScope;
+            if (rawInstallScope.Equals("both", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(
+                    "installScope: both is no longer supported. " +
+                    "Use installScope: perUser or installScope: perMachine, and use Flags " +
+                    "to produce separate Packages if you need both variants. " +
+                    "See docs/adr/0004-remove-both-scope.md for the migration path.");
 
-            if (!string.IsNullOrEmpty(_options.Scope))
-                return _options.Scope!.Equals("perMachine", StringComparison.OrdinalIgnoreCase)
-                    ? "perMachine"
-                    : "perUser";
-
-            return "perUser";
+            return rawInstallScope;
         }
 
         /// <summary>
@@ -1390,11 +1374,7 @@ namespace AlliePack
             Console.WriteLine($"UpgradeCode: {project.GUID}");
             if (_activeFlags.Any())
                 Console.WriteLine($"Active flags: {string.Join(", ", _activeFlags)}");
-            if (rawScope.Equals("both", StringComparison.OrdinalIgnoreCase))
-                Console.WriteLine($"Install scope: both -> {effectiveScope}" +
-                    (!string.IsNullOrEmpty(_options.Scope) ? $" (--scope {_options.Scope})" : " (default -- pass --scope perUser|perMachine)"));
-            else
-                Console.WriteLine($"Install scope: {effectiveScope}");
+            Console.WriteLine($"Install scope: {effectiveScope}");
             if (!string.IsNullOrEmpty(_config.Product.LicenseFile))
                 Console.WriteLine($"License file: {_config.Product.LicenseFile}");
             Console.WriteLine("------------------------------------");
@@ -1412,10 +1392,8 @@ namespace AlliePack
                     string evScope;
                     if (ev.Scope != null)
                         evScope = ev.Scope.Resolve(_activeFlags);
-                    else if (rawScope.Equals("both", StringComparison.OrdinalIgnoreCase))
-                        evScope = isMachineReport ? "machine" : "user";
                     else
-                        evScope = "user";
+                        evScope = isMachineReport ? "machine" : "user";
                     Console.WriteLine($"  [{evScope}] {ev.Name} = {ev.Value.Resolve(_activeFlags)}");
                 }
             }

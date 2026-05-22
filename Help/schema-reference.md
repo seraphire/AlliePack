@@ -36,7 +36,7 @@ wix:              # optional
 | `version` | string or version block | yes | — | Four-part (`1.0.0.0`), from PE file, or from git tags. See [version sourcing](#version-sourcing). |
 | `description` | string | no | `""` | Description shown in Add/Remove Programs |
 | `upgradeCode` | GUID string | yes | — | Must stay constant across all versions of your product. Changing this breaks upgrades. |
-| `installScope` | string or conditional | no | `perMachine` | `perUser`, `perMachine`, or `both` |
+| `installScope` | string or conditional | no | `perMachine` | `perUser` or `perMachine` |
 | `installDir` | string or conditional | no | `[ProgramFilesFolder]\Manufacturer\Name` | Root install directory |
 | `platform` | string | no | `x86` | `x86`, `x64`, or `arm64` |
 | `licenseFile` | string | no | — | Path to an `.rtf` file. Adds a license agreement dialog to the installer UI. |

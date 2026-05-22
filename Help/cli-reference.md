@@ -121,15 +121,6 @@ AlliePack.exe allie-pack.yaml --flag PerMachine --flag InternalTools
 
 If no `--flag` is passed, AlliePack uses the `defaultActiveFlags` list from the config. If that list is also empty, conditional maps resolve to their `_else` value.
 
-### `--scope <value>`
-
-Override the install scope for configs that use `installScope: both`. Values: `perUser`, `perMachine`.
-
-```
-AlliePack.exe allie-pack.yaml --scope perUser    --output dist\MyApp-user.msi
-AlliePack.exe allie-pack.yaml --scope perMachine --output dist\MyApp-machine.msi
-```
-
 ### `--keep-wxs`
 
 Preserve the generated `.wxs` WiX source file after building. The file is written alongside the output MSI. Useful for debugging or when you need to inspect what WiX XML AlliePack produced.

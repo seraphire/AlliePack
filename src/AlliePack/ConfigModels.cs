@@ -468,8 +468,8 @@ namespace AlliePack
         public ConditionalString Value { get; set; } = new ConditionalString(string.Empty);
 
         // GAP-5: supports conditional map (user/machine).
-        // Nullable so we can detect when it was not set in YAML, allowing
-        // installScope: both to supply a smart default.
+        // Nullable so we can detect when it was not set in YAML; defaults to
+        // the install scope (user for perUser, machine for perMachine) when omitted.
         [YamlMember(Alias = "scope")]
         public ConditionalString? Scope { get; set; }
     }

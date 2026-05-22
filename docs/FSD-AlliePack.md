@@ -108,28 +108,18 @@ wix:            # optional — raw WiX XML escape hatch
 | `version` | string | yes | — | Four-part: `1.0.0.0` |
 | `description` | string | no | `""` | Control Panel description |
 | `upgradeCode` | GUID string | yes | — | Stable across versions |
-| `installScope` | string or conditional | no | `perMachine` | `perUser`, `perMachine`, or `both` (see below) |
+| `installScope` | string or conditional | no | `perMachine` | `perUser` or `perMachine` |
 | `installDir` | string or conditional | no | `[ProgramFilesFolder]\Manufacturer\Name` | Install root path |
 | `platform` | string | no | `x86` | `x86`, `x64`, `arm64` |
 | `licenseFile` | string | no | — | Path to RTF license file |
-
-#### `installScope: both`
-
-Setting `installScope: both` declares that the config produces both a per-user and a
-per-machine MSI from the same file. The target is selected at build time.
-
-The three tiers of `installScope` are:
 
 | Value | Description |
 |---|---|
 | `perMachine` | Machine-wide install (default). Suitable for legacy apps, VB6, shared tooling. |
 | `perUser` | Current-user install only. No elevation required. |
-| `both` | Supports both. Smart defaults apply (see below); explicit values always override. |
 
-When `installScope: both` is active, AlliePack infers per-user / per-machine defaults
-for `installDir`, `directories[].type`, `environment[].scope`, and shortcut `folder`
-values, so most configs can skip conditional maps entirely. The PerUser/PerMachine
-release flag pattern (see §5.8) remains available for configs that need finer control.
+To produce both a per-user and per-machine Package from a single Package Definition,
+use release Flags with conditional maps (see §5.8).
 
 ### 5.3 `aliases:`
 
@@ -179,8 +169,7 @@ A list of `StructureElement` entries defining the INSTALLDIR file tree.
 | `description` | string | Tooltip text |
 | `folder` | string | Destination; WiX folder property, or a well-known alias (see below) |
 
-**Well-known `folder` aliases** — when `installScope: both`, these resolve to the
-appropriate per-user or per-machine WiX folder property automatically:
+**Well-known `folder` aliases** — these resolve to the appropriate per-user or per-machine WiX folder property based on `installScope`:
 
 | Alias | Per-user | Per-machine |
 |---|---|---|
@@ -213,9 +202,7 @@ Named install destinations outside INSTALLDIR.
 | `type` | string | Well-known location shorthand (see below). Resolved to a scope-aware path. |
 | `subPath` | string | Appended to the `type:` base path. Required when `type:` is used. |
 
-**Well-known `type:` values** — when `installScope: both`, the base path resolves to
-the appropriate per-user or per-machine WiX folder property automatically. With a fixed
-scope, the corresponding single path is used.
+**Well-known `type:` values** — the base path resolves to the per-user or per-machine WiX folder property based on `installScope`.
 
 | Type | Per-user base | Per-machine base |
 |---|---|---|

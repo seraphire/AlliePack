@@ -176,23 +176,19 @@ The practical rule: if the field is a file path used to find files at build time
 |---|---|
 | `perMachine` | Installs to `Program Files`, requires elevation, available to all users |
 | `perUser` | Installs to the user's `AppData\Local\Programs`, no elevation required |
-| `both` | Supports both; scope is selected at build time with `--scope` |
 
-For `both`, AlliePack infers sensible defaults for paths that depend on scope. You don't need conditional maps for the common case:
+To produce both a per-user and per-machine Package from a single Package Definition, use Flags:
 
 ```yaml
 product:
-  installScope: both
-  # installDir defaults automatically:
-  #   per-user:    %LocalAppData%\Programs\MyCompany\MyApp
-  #   per-machine: C:\Program Files\MyCompany\MyApp
+  installScope:
+    perMachine: perMachine
+    default: perUser
 ```
 
-Build both targets:
-
 ```
-AlliePack.exe allie-pack.yaml --scope perUser    --output dist\MyApp-user.msi
-AlliePack.exe allie-pack.yaml --scope perMachine --output dist\MyApp-machine.msi
+AlliePack.exe allie-pack.yaml --flag perMachine --output dist\MyApp-machine.msi
+AlliePack.exe allie-pack.yaml                   --output dist\MyApp-user.msi
 ```
 
 ---

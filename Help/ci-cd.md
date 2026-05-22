@@ -131,12 +131,14 @@ signing:
 
 ### Building per-user and per-machine MSIs
 
+Use release Flags to select scope from the same Package Definition:
+
 ```yaml
 - script: |
     AlliePack.exe allie-pack.yaml
       --define srcRoot=$(Build.SourcesDirectory)
       --define VERSION=$(Build.BuildNumber)
-      --scope perUser
+      --flag PerUser
       --output $(Build.ArtifactStagingDirectory)\MyApp-user.msi
   displayName: Build per-user MSI
 
@@ -144,7 +146,7 @@ signing:
     AlliePack.exe allie-pack.yaml
       --define srcRoot=$(Build.SourcesDirectory)
       --define VERSION=$(Build.BuildNumber)
-      --scope perMachine
+      --flag PerMachine
       --output $(Build.ArtifactStagingDirectory)\MyApp-machine.msi
   displayName: Build per-machine MSI
 ```

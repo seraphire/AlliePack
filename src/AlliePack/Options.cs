@@ -31,13 +31,7 @@ namespace AlliePack
                        "Example: --flag PerUser  or  --flag PerMachine")]
         public IEnumerable<string> Flags { get; set; } = new List<string>();
 
-        [Option("scope", Required = false,
-            HelpText = "Override the effective installation scope for 'installScope: both' configs. " +
-                       "Values: perUser, perMachine.  " +
-                       "Ignored when installScope is perUser or perMachine.")]
-        public string? Scope { get; set; }
-
-        [Option("keep-wxs", Required = false,
+[Option("keep-wxs", Required = false,
             HelpText = "Preserve the generated .wxs source file after building. " +
                        "Useful for debugging or auditing the WiX XML.")]
         public bool KeepWxs { get; set; }
