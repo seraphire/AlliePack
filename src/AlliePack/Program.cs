@@ -87,7 +87,10 @@ namespace AlliePack
                 var solutionResolver = new SolutionResolver(resolver, options.Debug);
                 var builder = new InstallerBuilder(config, resolver, solutionResolver, options, activeFlags);
 
-                Console.WriteLine($"Building MSI for {config.Product.Name} v{config.Product.Version.Resolve(resolver)}...");
+                if (options.ExportWxs)
+                    Console.WriteLine($"Exporting WXS for {config.Product.Name}...");
+                else
+                    Console.WriteLine($"Building MSI for {config.Product.Name} v{config.Product.Version.Resolve(resolver)}...");
                 builder.Build();
 
                 Console.WriteLine("Done.");

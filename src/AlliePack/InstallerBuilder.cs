@@ -487,6 +487,10 @@ namespace AlliePack
             {
                 GenerateReport(project, entities);
             }
+            else if (_options.ExportWxs)
+            {
+                ExportWxsArtifact(project);
+            }
             else
             {
                 if (!string.IsNullOrEmpty(_options.OutputPath))
@@ -518,6 +522,348 @@ namespace AlliePack
                         SigningHelper.Sign(msiPath, _config.Signing, _resolver, _options.IsVerbose);
                 }
             }
+        }
+
+        // -----------------------------------------------------------------------------------------
+        // WXS export
+        // -----------------------------------------------------------------------------------------
+
+        /// <summary>
+        /// Generates a portable WXS artifact directory containing:
+        /// - The WXS source file with $(var.Version) as the version placeholder
+        /// - WixSharp runtime DLLs needed to compile the WXS with wix.exe
+        /// - build.ps1 that compiles the WXS to an MSI given a -Version parameter
+        ///
+        /// All source paths in the WXS are rewritten to be relative to the export directory.
+        /// System-level WixSharp assets (WxL files, etc.) are copied into the export directory.
+        /// </summary>
+        private void ExportWxsArtifact(ManagedProject project)
+        {
+            // Determine export directory
+            string exportDir = !string.IsNullOrEmpty(_options.OutputPath)
+                ? Path.GetFullPath(_options.OutputPath)
+                : Path.GetFullPath(MakeExportDirName(_config.Product.Name));
+
+            Directory.CreateDirectory(exportDir);
+            Console.WriteLine($"Export directory: {exportDir}");
+
+            string safeName = MakeSafeFileName(_config.Product.Name);
+
+            // Route WixSharp output (CA DLLs, UI assets) to the export directory
+            project.OutDir      = exportDir;
+            project.OutFileName = safeName;
+
+            string cwd = Directory.GetCurrentDirectory();
+            XNamespace wixNs = "http://wixtoolset.org/schemas/v4/wxs";
+
+            project.WixSourceGenerated += doc =>
+            {
+                // Rewrite <Package Version="..."> to a WiX preprocessor variable so the
+                // customer CI pipeline can supply the version at wix.exe compile time.
+                doc.Descendants(wixNs + "Package")
+                   .FirstOrDefault()
+                   ?.SetAttributeValue("Version", "$(var.Version)");
+
+                // Rewrite all Source / SourceFile attributes to be relative to the export
+                // directory.  WixSharp writes paths relative to CWD; we normalise them to
+                // absolute first, then re-express them relative to the export dir.
+                // System-level files (ProgramData, Windows dir) are copied into the export
+                // directory so the artifact is self-contained for those assets.
+                foreach (var element in doc.Descendants())
+                {
+                    RewriteSourceAttr(element, "Source",     cwd, exportDir);
+                    RewriteSourceAttr(element, "SourceFile", cwd, exportDir);
+                }
+            };
+
+            // Generate the WXS.  WixSharp uses project.OutDir + project.OutFileName to
+            // determine where to write the WXS and CA DLLs.  BuildWxs does NOT invoke
+            // wix.exe -- it produces only the XML source file.
+            Compiler.BuildWxs(project, Compiler.OutputType.MSI);
+
+            // Detect which WiX extensions are required by scanning the generated WXS for
+            // non-core namespaces.  Find each extension DLL on disk and copy it into the
+            // export directory so the artifact is self-contained; the build.ps1 will
+            // reference the local copy by path rather than by package name.
+            string wxsPath = Path.Combine(exportDir, safeName + ".wxs");
+            var extensions = DetectWixExtensions(wxsPath);
+
+            // Resolve and bundle extension DLLs
+            // extRefs: the -ext argument to use in build.ps1 (local filename if bundled,
+            //          package name if the DLL couldn't be found locally)
+            var extRefs = new List<string>();
+            foreach (var ext in extensions)
+            {
+                string? dllSrc = FindWixExtensionDll(ext);
+                if (dllSrc != null)
+                {
+                    string dllDest = Path.Combine(exportDir, Path.GetFileName(dllSrc));
+                    if (!System.IO.File.Exists(dllDest))
+                        System.IO.File.Copy(dllSrc, dllDest);
+                    extRefs.Add(Path.GetFileName(dllSrc));   // relative path in build.ps1
+                }
+                else
+                {
+                    extRefs.Add(ext);   // package name fallback
+                    Console.WriteLine($"  Warning: WiX extension DLL not found for '{ext}'; " +
+                                      $"build.ps1 will reference it by package name. " +
+                                      $"Run 'wix extension add {ext}' on the target machine if the build fails.");
+                }
+            }
+
+            // Emit build.ps1 with the bundled extension paths
+            WriteBuildScript(exportDir, safeName, extRefs);
+
+            // Build the example wix command for the summary
+            string extArgsSummary = extRefs.Count > 0
+                ? " " + string.Join(" ", extRefs.Select(e => $"-ext {e}"))
+                : "";
+            string exampleCmd = $"wix build {safeName}.wxs -d Version=1.0.0.0{extArgsSummary} -o {safeName}-1.0.0.0.msi";
+
+            // Summary
+            Console.WriteLine();
+            Console.WriteLine($"  {safeName}.wxs");
+            Console.WriteLine($"  build.ps1");
+            if (extensions.Count > 0)
+                Console.WriteLine($"  Extensions bundled: {string.Join(", ", extensions)}");
+            Console.WriteLine();
+            Console.WriteLine("To build the MSI:");
+            Console.WriteLine($"  cd \"{exportDir}\"");
+            Console.WriteLine($"  .\\build.ps1 -Version 1.0.0.0");
+            Console.WriteLine($"  {exampleCmd}");
+        }
+
+        /// <summary>
+        /// Rewrites a single Source or SourceFile attribute on an element so its path is
+        /// relative to <paramref name="exportDir"/> rather than relative to <paramref name="cwd"/>.
+        /// Files that live in system directories (ProgramData, Windows) are copied into the
+        /// export directory and referenced by filename only.
+        /// </summary>
+        private static void RewriteSourceAttr(XElement element, string attrName, string cwd, string exportDir)
+        {
+            var attr = element.Attribute(attrName);
+            if (attr == null || string.IsNullOrWhiteSpace(attr.Value)) return;
+
+            string raw = attr.Value;
+
+            // Resolve to absolute path (WixSharp writes paths relative to CWD)
+            string abs = Path.IsPathRooted(raw)
+                ? Path.GetFullPath(raw)
+                : Path.GetFullPath(Path.Combine(cwd, raw));
+
+            string newPath;
+
+            if (abs.StartsWith(exportDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(abs, exportDir, StringComparison.OrdinalIgnoreCase))
+            {
+                // Already inside the export directory -- express as path relative to export dir
+                newPath = abs.Substring(exportDir.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            }
+            else if (IsSystemPath(abs))
+            {
+                // System asset (e.g. WixUI_en-US.wxl from ProgramData) -- copy alongside WXS
+                string dest = Path.Combine(exportDir, Path.GetFileName(abs));
+                if (System.IO.File.Exists(abs) && !System.IO.File.Exists(dest))
+                    System.IO.File.Copy(abs, dest);
+                newPath = Path.GetFileName(abs);
+            }
+            else
+            {
+                // Source file (application binary, config, etc.) -- relative path from export dir
+                newPath = MakeRelativePath(exportDir, abs);
+            }
+
+            attr.SetValue(newPath);
+        }
+
+        private static bool IsSystemPath(string absPath)
+        {
+            string programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+            string windows     = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+            return absPath.StartsWith(programData, StringComparison.OrdinalIgnoreCase)
+                || absPath.StartsWith(windows,     StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>Computes a path relative from <paramref name="fromDir"/> to <paramref name="toPath"/>.</summary>
+        private static string MakeRelativePath(string fromDir, string toPath)
+        {
+            if (!fromDir.EndsWith(Path.DirectorySeparatorChar.ToString()))
+                fromDir += Path.DirectorySeparatorChar;
+            var fromUri = new Uri(fromDir);
+            var toUri   = new Uri(toPath);
+            if (fromUri.Scheme != toUri.Scheme) return toPath;   // different drives, etc.
+            var rel = fromUri.MakeRelativeUri(toUri);
+            return Uri.UnescapeDataString(rel.ToString())
+                      .Replace('/', Path.DirectorySeparatorChar);
+        }
+
+        /// <summary>
+        /// Produces a safe file-system name from the product name.
+        /// Strips invalid filename characters and replaces spaces with hyphens.
+        /// </summary>
+        private static string MakeSafeFileName(string productName)
+        {
+            char[] invalid = Path.GetInvalidFileNameChars();
+            return new string(productName
+                .Select(c => invalid.Contains(c) ? '-' : c == ' ' ? '-' : c)
+                .ToArray());
+        }
+
+        private static string MakeExportDirName(string productName)
+            => MakeSafeFileName(productName) + "-wxs";
+
+        /// <summary>
+        /// Maps WiX extension XML namespace URIs to their extension package names.
+        /// Used to detect which -ext flags are needed when compiling an exported WXS.
+        /// </summary>
+        private static readonly Dictionary<string, string> _wixExtensionMap =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["http://wixtoolset.org/schemas/v4/wxs/util"]      = "WixToolset.Util.wix4",
+                ["http://wixtoolset.org/schemas/v4/wxs/firewall"]   = "WixToolset.Firewall.wix4",
+                ["http://wixtoolset.org/schemas/v4/wxs/iis"]        = "WixToolset.Iis.wix4",
+                ["http://wixtoolset.org/schemas/v4/wxs/netfx"]      = "WixToolset.NetFx.wix4",
+                ["http://wixtoolset.org/schemas/v4/wxs/sql"]        = "WixToolset.Sql.wix4",
+                ["http://wixtoolset.org/schemas/v4/wxs/ui"]         = "WixToolset.UI.wix4",
+                ["http://wixtoolset.org/schemas/v4/wxs/bal"]        = "WixToolset.BootstrapperApplications.wix4",
+            };
+
+        /// <summary>
+        /// Locates the compiled DLL for a WiX extension package in the user's wix extension
+        /// cache (~/.wix/extensions/).  Returns null if not found.
+        ///
+        /// WiX stores extension DLLs at:
+        ///   %USERPROFILE%\.wix\extensions\{wixextName}\{version}\wixext5\{wixextName}.dll
+        /// where {wixextName} is the package name with ".wix4" replaced by ".wixext".
+        /// </summary>
+        private static string? FindWixExtensionDll(string packageName)
+        {
+            // Map NuGet package name to the on-disk directory/DLL name
+            // WixToolset.Util.wix4  ->  WixToolset.Util.wixext
+            string wixextName = packageName.Replace(".wix4", ".wixext");
+
+            string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            string extDir = Path.Combine(userProfile, ".wix", "extensions", wixextName);
+            if (!Directory.Exists(extDir)) return null;
+
+            // Find the highest v5-compatible version: look only in wixext5/ subdirectories.
+            // wixext6/ DLLs require WixToolset.Extensibility v6 and cannot be loaded by wix.exe v5.
+            // Sort version directory names as Version objects so "5.0.10" > "5.0.9" (not string order).
+            var versionDirs = Directory.GetDirectories(extDir)
+                                       .Select(d => new { Path = d, Name = Path.GetFileName(d) })
+                                       .Select(x => new {
+                                           x.Path,
+                                           Ver = Version.TryParse(x.Name, out var v) ? v : null
+                                       })
+                                       .Where(x => x.Ver != null)
+                                       .OrderByDescending(x => x.Ver)
+                                       .Select(x => x.Path)
+                                       .ToArray();
+
+            foreach (var vDir in versionDirs)
+            {
+                // Only use wixext5/ -- wix.exe v5 cannot load v6 extension assemblies
+                string dll = Path.Combine(vDir, "wixext5", wixextName + ".dll");
+                if (System.IO.File.Exists(dll)) return dll;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Reads a generated WXS file and returns the list of WiX extension package names
+        /// required to compile it (detected by matching element/attribute namespace URIs).
+        /// </summary>
+        private static List<string> DetectWixExtensions(string wxsPath)
+        {
+            var found = new List<string>();
+            try
+            {
+                var doc = XDocument.Load(wxsPath);
+                // Check namespace declarations and element namespaces
+                var namespaces = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var el in doc.Descendants())
+                {
+                    namespaces.Add(el.Name.NamespaceName);
+                    foreach (var attr in el.Attributes().Where(a => a.IsNamespaceDeclaration))
+                        namespaces.Add(attr.Value);
+                }
+                foreach (var ns in namespaces)
+                    if (_wixExtensionMap.TryGetValue(ns, out string ext) && !found.Contains(ext))
+                        found.Add(ext);
+            }
+            catch { /* best-effort; missing extensions will surface at wix build time */ }
+            return found;
+        }
+
+        /// <summary>
+        /// Writes a build.ps1 script into <paramref name="exportDir"/> that compiles the WXS
+        /// to an MSI using wix.exe.  The script must be run from (or will Push-Location to)
+        /// the export directory so the relative source paths in the WXS resolve correctly.
+        /// </summary>
+        private static void WriteBuildScript(string exportDir, string safeName, List<string> extensions)
+        {
+            // Rules (global CLAUDE.md): set UTF-8 mode for any script that outputs text.
+            // IMPORTANT: param() must be the very first statement in a PowerShell script.
+            // Use {{ / }} to escape braces inside a C# interpolated verbatim string.
+
+            // Build the -ext flags string.  Extension DLLs bundled alongside the WXS are
+            // referenced via Join-Path $scriptDir so they resolve regardless of CWD.
+            // -sw1044: suppress ambiguous short name; -sw5437: suppress legacy directory advisory.
+            string extLines = extensions.Count > 0
+                ? string.Join(Environment.NewLine,
+                      extensions.Select(e => e.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
+                          ? $"$extArgs += @('-ext', (Join-Path $scriptDir '{e}'))"
+                          : $"$extArgs += @('-ext', '{e}')"))
+                : string.Empty;
+            string extArgsInit = extensions.Count > 0
+                ? "$extArgs = @()" + Environment.NewLine + extLines + Environment.NewLine
+                : string.Empty;
+            string extSplat = extensions.Count > 0 ? " @extArgs" : "";
+
+            string script =
+$@"param(
+    [Parameter(Mandatory)][string]$Version,
+    [string]$OutputPath = ''
+)
+
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding           = [System.Text.Encoding]::UTF8
+chcp 65001 | Out-Null
+
+$scriptDir = $PSScriptRoot
+$wxsFile   = Join-Path $scriptDir '{safeName}.wxs'
+
+if (-not (Get-Command wix.exe -ErrorAction SilentlyContinue)) {{
+    Write-Host 'wix.exe not found on PATH.'
+    Write-Host 'Install WiX v5: dotnet tool install --global wix --version 5.*'
+    exit 1
+}}
+
+if (-not $OutputPath) {{ $OutputPath = $scriptDir }}
+
+{extArgsInit}$msiName = '{safeName}-' + $Version + '.msi'
+$msiPath = Join-Path $OutputPath $msiName
+
+Write-Host ""Building: $msiPath""
+
+# Source paths in the WXS are relative to the export directory -- run wix from there.
+Push-Location $scriptDir
+try {{
+    wix build $wxsFile -d Version=$Version{extSplat} -sw1044 -sw5437 -o $msiPath
+    if ($LASTEXITCODE -ne 0) {{
+        Write-Host ""wix build failed (exit $LASTEXITCODE)""
+        exit $LASTEXITCODE
+    }}
+}} finally {{
+    Pop-Location
+}}
+
+Write-Host ""Done: $msiPath""
+";
+            System.IO.File.WriteAllText(
+                Path.Combine(exportDir, "build.ps1"),
+                script,
+                System.Text.Encoding.UTF8);
         }
 
         private string ResolveEnvScope(EnvVarConfig ev, string rawInstallScope, bool isMachine)

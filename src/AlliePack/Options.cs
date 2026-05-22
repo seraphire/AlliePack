@@ -36,6 +36,14 @@ namespace AlliePack
                        "Useful for debugging or auditing the WiX XML.")]
         public bool KeepWxs { get; set; }
 
+        [Option("export-wxs", Required = false,
+            HelpText = "Export a portable WXS artifact directory instead of building an MSI. " +
+                       "Produces the WXS source, required WixSharp binaries, and a build.ps1 script. " +
+                       "Version is emitted as $(var.Version) so the customer CI pipeline can supply it. " +
+                       "All source paths are written relative to the export directory. " +
+                       "Use --output to specify the export directory (default: <ProductName>-wxs in CWD).")]
+        public bool ExportWxs { get; set; }
+
         [Option("debug", Required = false,
             HelpText = "Enable diagnostic output: resolved config values, alias expansions, " +
                        "per-file source-to-destination mappings, shortcut resolution, and WiX tool location. " +
