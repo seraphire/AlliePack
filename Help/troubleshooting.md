@@ -40,9 +40,9 @@ AlliePack.exe allie-pack.yaml --report --verbose
 
 **Common fixes:**
 
-- If the path uses `[GitRoot]`, make sure AlliePack is running inside (or below) a git repository.
-- If the path uses `[CurrentDir]`, make sure you're running AlliePack from the expected working directory, or override with `--define srcRoot=<path>`.
-- Forward slashes and backslashes both work in most fields, but some contexts are picky. Use `[YamlDir]` instead of relative paths when possible — it's always resolved correctly.
+- If the path uses `$(GitRoot)`, make sure AlliePack is running inside (or below) a git repository.
+- If the path uses `$(CurrentDir)`, make sure you're running AlliePack from the expected working directory, or override with `--define srcRoot=<path>`.
+- Forward slashes and backslashes both work in most fields, but some contexts are picky. Use `$(YamlDir)` instead of relative paths when possible — it's always resolved correctly.
 
 ---
 

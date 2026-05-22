@@ -73,7 +73,7 @@ AlliePack.exe [config] [options]
 | `-o`, `--output <path>` | Output path for the generated MSI. Defaults to `<ProductName>.msi` in the current directory. |
 | `-r`, `--report` | Dry run: print a content report instead of building the MSI. |
 | `-v`, `--verbose` | Enable verbose output. |
-| `-D`, `--define KEY=VALUE` | Substitute `[KEY]` tokens in the YAML before parsing. Repeatable. |
+| `-D`, `--define KEY=VALUE` | Substitute `$(KEY)` tokens in the YAML before parsing. Repeatable. |
 | `--flag <name>` | Activate a release flag. Selects values from conditional maps. Repeatable. Falls back to `defaultActiveFlags` in config. |
 
 ---
@@ -150,13 +150,13 @@ A list of `StructureElement` entries defining the INSTALLDIR file tree.
 | `onEmpty` | string | Behavior when no files match: `warn` (default), `error`, `ignore` |
 | `contents` | list | Nested `StructureElement` entries |
 
-**Glob tokens available in `source:`:**
+**Compile-time tokens available in `source:`:**
 
 | Token | Resolves to |
 |---|---|
-| `[YamlDir]` | Directory containing the YAML file |
-| `[GitRoot]` | Root of the nearest git repository |
-| `[CurrentDir]` | Working directory at invocation |
+| `$(YamlDir)` | Directory containing the YAML file |
+| `$(GitRoot)` | Root of the nearest git repository |
+| `$(CurrentDir)` | Working directory at invocation |
 | `aliasName:` | Path defined in `aliases:` |
 | `**` | Recursive directory descent; preserves relative path structure |
 
@@ -312,7 +312,7 @@ wix:
 
 Resolution order for a `source:` value:
 
-1. Replace `[YamlDir]`, `[GitRoot]`, `[CurrentDir]` tokens
+1. Replace `$(YamlDir)`, `$(GitRoot)`, `$(CurrentDir)` tokens (and legacy `[YamlDir]` etc. with deprecation warning)
 2. Replace `aliasName:` prefix with alias value
 3. If relative, make absolute relative to the YAML file directory
 4. If contains `**`: split at `**`, enumerate recursively, preserve relative paths

@@ -1408,7 +1408,7 @@ URL, SHA256, description); only the output format differs.
 # allie-pack.yaml -- same config, three platform targets
 product:
   name: "mytool"
-  version: "[VERSION]"
+  version: "$(VERSION)"
   manufacturer: "MyCompany"
 
 releaseFlags: [Windows, macOS, Linux]

@@ -99,7 +99,7 @@ private key is already protected by the store.
 ```yaml
 signing:
   pfx: "certs/MyApp.pfx"              # path resolved via aliases and tokens
-  pfxPassword: "[SIGN_PASSWORD]"      # injected at build time via --define
+  pfxPassword: "$(SIGN_PASSWORD)"     # injected at build time via --define
   timestampUrl: "http://timestamp.digicert.com"
 ```
 
@@ -134,7 +134,7 @@ signing:
     account: "MySigningAccount"
     certificateProfile: "MyProfile"
     dlibPath: 'C:\Program Files\Microsoft\Azure Code Signing\x64\Azure.CodeSigning.Dlib.dll'
-    correlationId: "[BUILD_ID]"    # optional; supports tokens; useful for audit tracing
+    correlationId: "$(BUILD_ID)"   # optional; supports tokens; useful for audit tracing
   timestampUrl: "http://timestamp.acs.microsoft.com"
   files:
     mode: unsigned
@@ -174,12 +174,12 @@ or service connection — no credentials in the YAML.
 ### Custom signing command
 
 Use `command:` when you need a signing tool that AlliePack does not natively
-support.  AlliePack substitutes `[TOKEN]` values and replaces `{file}` with the
+support.  AlliePack substitutes `$(TOKEN)` compile-time tokens and replaces `{file}` with the
 file path, then runs the result via `cmd.exe`.
 
 ```yaml
 signing:
-  command: 'AzureSignTool.exe sign -kvu "[KV_URL]" -kvc "[CERT_NAME]" -fd sha256 -tr "http://timestamp.acs.microsoft.com" -td sha256 "{file}"'
+  command: 'AzureSignTool.exe sign -kvu "$(KV_URL)" -kvc "$(CERT_NAME)" -fd sha256 -tr "http://timestamp.acs.microsoft.com" -td sha256 "{file}"'
 ```
 
 `{file}` is replaced with the full path to each file being signed (and the MSI

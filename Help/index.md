@@ -41,7 +41,7 @@ product:
   upgradeCode: "YOUR-STABLE-GUID"
 
 aliases:
-  bin: "[GitRoot]/src/MyApp/bin/Release/net481"
+  bin: "$(GitRoot)/src/MyApp/bin/Release/net481"
 
 structure:
   - source: "bin:MyApp.exe"

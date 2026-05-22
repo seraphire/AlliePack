@@ -70,7 +70,7 @@ Short names for directory paths, used in `source:` fields as `alias:pattern`.
 
 ```yaml
 aliases:
-  bin: "[GitRoot]/src/MyApp/bin/Release/net481"
+  bin: "$(GitRoot)/src/MyApp/bin/Release/net481"
   assets: "installer/assets"
 ```
 
@@ -80,12 +80,12 @@ Values may contain built-in tokens. See [Token reference](#built-in-tokens).
 
 ## `variables:`
 
-Named tokens available as `[name]` throughout the config. Values may contain built-in tokens. Can be overridden on the command line with `--define name=value`.
+Named tokens available as `$(name)` throughout the config. Values may contain built-in tokens. Can be overridden on the command line with `--define name=value`.
 
 ```yaml
 variables:
-  srcRoot: "[CurrentDir]"
-  buildOutput: "[srcRoot]/bin/Release"
+  srcRoot: "$(CurrentDir)"
+  buildOutput: "$(srcRoot)/bin/Release"
   buildConfig: "Release"     # also usable in `configuration:` fields
 ```
 
@@ -116,7 +116,7 @@ List of `StructureElement` entries defining the installed file tree under `INSTA
 | `bin:MyApp.exe` | File `MyApp.exe` under the `bin` alias path |
 | `bin:*.dll` | All `.dll` files directly under `bin` |
 | `bin:**/*.dll` | All `.dll` files recursively under `bin`, preserving subdirectory structure |
-| `[GitRoot]/output/file.exe` | Absolute path using a built-in token |
+| `$(GitRoot)/output/file.exe` | Absolute path using a built-in token |
 | `relative/path/file.exe` | Resolved relative to the YAML file location |
 
 ---
@@ -293,7 +293,7 @@ Conditional maps are supported on: `product.installScope`, `product.installDir`,
 |---|---|---|
 | `thumbprint` | string | SHA1 cert thumbprint in Windows cert store |
 | `pfx` | string | Path to PFX file (resolved via aliases/tokens) |
-| `pfxPassword` | string | PFX password; supports `[TOKEN]` substitution |
+| `pfxPassword` | string | PFX password; supports `$(TOKEN)` substitution |
 | `azure` | block | Azure Trusted Signing config (see below) |
 | `command` | string | Shell command; `{file}` is replaced with the file path |
 | `timestampUrl` | string | RFC 3161 timestamp server URL |
@@ -310,7 +310,7 @@ Exactly one of `thumbprint`, `pfx`, `azure`, or `command` is required.
 | `account` | string | Azure Trusted Signing account name |
 | `certificateProfile` | string | Certificate profile name |
 | `dlibPath` | string | Path to `Azure.CodeSigning.Dlib.dll` |
-| `correlationId` | string | Optional audit tracking value; supports `[TOKEN]` |
+| `correlationId` | string | Optional audit tracking value; supports `$(TOKEN)` |
 
 ### `signing.files:`
 
@@ -361,11 +361,11 @@ Available in `source:`, `aliases:`, `variables:`, and most string fields.
 
 | Token | Resolves to |
 |---|---|
-| `[YamlDir]` | Directory containing the YAML config file |
-| `[GitRoot]` | Root of the nearest git repository (walks up from YAML dir) |
-| `[CurrentDir]` | Working directory when AlliePack is invoked |
-| `[ProgramFiles]` | Build-time shorthand for `installDir`: resolves to `[ProgramFiles64Folder]` on x64/arm64, `[ProgramFilesFolder]` on x86 |
-| `[KEY]` | Value of `--define KEY=VALUE` or `paths.KEY` |
+| `$(YamlDir)` | Directory containing the YAML config file |
+| `$(GitRoot)` | Root of the nearest git repository (walks up from YAML dir) |
+| `$(CurrentDir)` | Working directory when AlliePack is invoked |
+| `$(ProgramFiles)` | Build-time shorthand for `installDir`: resolves to `[ProgramFiles64Folder]` on x64/arm64, `[ProgramFilesFolder]` on x86 |
+| `$(KEY)` | Value of `--define KEY=VALUE` or `variables.KEY` |
 
 WiX install-time properties (not build-time tokens) are also valid in path and value fields where noted:
 

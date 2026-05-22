@@ -38,7 +38,7 @@ The `folder:` key creates the subdirectory. Files inside it go in `contents:`. O
 - source: "bin:MyApp.exe"            # single file
 - source: "bin:*.dll"                # all DLLs in the bin directory
 - source: "bin:**/*.dll"             # all DLLs recursively, preserving subdirectory structure
-- source: "[GitRoot]/data/config.json"  # token-based path
+- source: "$(GitRoot)/data/config.json" # token-based path
 ```
 
 **2. Visual Studio project (`project:`)** — AlliePack reads the `.csproj` or `.vbproj` file, figures out where the build output goes for the given `configuration` and `platform`, and includes all files from that directory. You don't need to know the output path or list files manually.
@@ -106,19 +106,19 @@ These are replaced first, before any other resolution:
 
 | Token | Value |
 |---|---|
-| `[YamlDir]` | The directory containing your `allie-pack.yaml` file |
-| `[GitRoot]` | The root of the nearest git repository (walked up from `YamlDir`) |
-| `[CurrentDir]` | The directory from which you ran `AlliePack.exe` |
+| `$(YamlDir)` | The directory containing your `allie-pack.yaml` file |
+| `$(GitRoot)` | The root of the nearest git repository (walked up from `YamlDir`) |
+| `$(CurrentDir)` | The directory from which you ran `AlliePack.exe` |
 
-These three are always available. `[GitRoot]` falls back to `[YamlDir]` if there's no git repository.
+These three are always available. `$(GitRoot)` falls back to `$(YamlDir)` if there's no git repository.
 
 ### User-defined variables and defines
 
-Values in `variables:` define custom tokens available as `[name]`. Command-line `--define KEY=VALUE` overrides any `variables.KEY` with the same name.
+Values in `variables:` define custom tokens available as `$(name)`. Command-line `--define KEY=VALUE` overrides any `variables.KEY` with the same name.
 
 ```yaml
 variables:
-  srcRoot: "[CurrentDir]"       # default: wherever you run AlliePack from
+  srcRoot: "$(CurrentDir)"      # default: wherever you run AlliePack from
   version: "1.0.0.0"
 ```
 
@@ -127,7 +127,7 @@ variables:
 AlliePack.exe allie-pack.yaml --define srcRoot=D:\ci\src
 ```
 
-This is the key pattern for CI/CD: your YAML file works correctly locally (using `[CurrentDir]`), and in CI you pass the actual source path as a define.
+This is the key pattern for CI/CD: your YAML file works correctly locally (using `$(CurrentDir)`), and in CI you pass the actual source path as a define.
 
 ### Aliases
 
@@ -135,14 +135,14 @@ Aliases are short names for directories, used in `source:` fields with `alias:pa
 
 ```yaml
 aliases:
-  bin: "[GitRoot]/src/MyApp/bin/Release/net481"
-  assets: "[YamlDir]/installer/assets"
+  bin: "$(GitRoot)/src/MyApp/bin/Release/net481"
+  assets: "$(YamlDir)/installer/assets"
 ```
 
 ```yaml
 structure:
-  - source: "bin:*.dll"          # expands to [GitRoot]/src/MyApp/bin/Release/net481/*.dll
-  - source: "assets:logo.png"    # expands to [YamlDir]/installer/assets/logo.png
+  - source: "bin:*.dll"          # expands to $(GitRoot)/src/MyApp/bin/Release/net481/*.dll
+  - source: "assets:logo.png"    # expands to $(YamlDir)/installer/assets/logo.png
 ```
 
 ### Relative paths
@@ -160,11 +160,11 @@ structure:
 
 AlliePack has two distinct kinds of variable: **build-time tokens** (resolved when AlliePack runs) and **WiX install-time properties** (resolved when the MSI runs on the user's machine).
 
-**Build-time tokens** use `[UpperCase]` brackets and include `[YamlDir]`, `[GitRoot]`, user-defined `[paths]`, and `--define` values. They are expanded before WiX ever sees the config.
+**Compile-time tokens** use `$(Name)` syntax and include `$(YamlDir)`, `$(GitRoot)`, user-defined variables, and `--define` values. They are expanded by AlliePack before WiX ever sees the config. See ADR-0003.
 
-**WiX properties** also use `[UpperCase]` brackets, but they aren't known until the MSI is running: `[INSTALLDIR]`, `[AppDataFolder]`, `[CommonAppDataFolder]`, etc. They appear in shortcut targets, registry values, environment variable values, and service executable paths — places that need to reference the actual installation location on the target machine.
+**WiX install-time properties** use `[ALLCAPS]` brackets and aren't known until the MSI runs on the target machine: `[INSTALLDIR]`, `[AppDataFolder]`, `[CommonAppDataFolder]`, etc. They appear in shortcut targets, registry values, environment variable values, and service executable paths — places that reference the actual installation location at install time.
 
-The practical rule: if the field is a file path used to find files at build time (like `source:` or `aliases:`), use build-time tokens. If the field describes a path where something will be installed at runtime (like `shortcuts[].target` or `registry[].value`), use WiX properties.
+The practical rule: if the field is a file path used to find files at build time (like `source:` or `aliases:`), use compile-time tokens. If the field describes a path where something will be installed at runtime (like `shortcuts[].target` or `registry[].value`), use WiX install-time properties.
 
 ---
 

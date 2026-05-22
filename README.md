@@ -5,7 +5,7 @@ AlliePack is a YAML-driven MSI installer builder built on **WixSharp** and **WiX
 ## Features
 
 - **YAML configuration** for product info, file structure, and shortcuts
-- **Path resolution** with built-in tokens (`[YamlDir]`, `[GitRoot]`, `[CurrentDir]`) and user-defined aliases
+- **Path resolution** with built-in tokens (`$(YamlDir)`, `$(GitRoot)`, `$(CurrentDir)`) and user-defined aliases
 - **Glob pattern** support for bulk file inclusion (e.g., `bin:*.dll`)
 - **Visual Studio integration** -- resolve build outputs directly from `.sln` or `.csproj` files
 - **Shortcut creation** for Start Menu, Desktop, or any WiX folder property
@@ -142,22 +142,22 @@ development without changing the YAML file.
 
 ```yaml
 paths:
-  srcRoot: "[CurrentDir]"          # default to CWD; override in CI with --define srcRoot=...
-  assets:  "[YamlDir]/../assets"
+  srcRoot: "$(CurrentDir)"         # default to CWD; override in CI with --define srcRoot=...
+  assets:  "$(YamlDir)/../assets"
 ```
 
-Tokens defined here are used anywhere in the config as `[name]`:
+Tokens defined here are used anywhere in the config as `$(name)`:
 
 ```yaml
 structure:
-  - project: "[srcRoot]/MyApp/MyApp.csproj"
+  - project: "$(srcRoot)/MyApp/MyApp.csproj"
     configuration: Release
 ```
 
 **CI override pattern** — no changes to the YAML needed between environments:
 
 ```
-# Local: run AlliePack from the source directory; [CurrentDir] resolves automatically.
+# Local: run AlliePack from the source directory; $(CurrentDir) resolves automatically.
 cd C:\src\MyApp && AlliePack path\to\allie-pack.yaml
 
 # CI: working directory is not the source root, so pass it explicitly.
@@ -170,17 +170,17 @@ Aliases are short names for paths, used in `source:` fields with the `alias:path
 
 ```yaml
 aliases:
-  bin: "[GitRoot]/src/MyApp/bin/Release/net481"
+  bin: "$(GitRoot)/src/MyApp/bin/Release/net481"
   assets: "resources/dist"
 ```
 
-Built-in path tokens:
+Built-in compile-time tokens:
 
 | Token | Resolves to |
 |---|---|
-| `[YamlDir]` | Directory containing the YAML config file |
-| `[GitRoot]` | Root of the nearest git repository |
-| `[CurrentDir]` | Current working directory when AlliePack is invoked |
+| `$(YamlDir)` | Directory containing the YAML config file |
+| `$(GitRoot)` | Root of the nearest git repository |
+| `$(CurrentDir)` | Current working directory when AlliePack is invoked |
 
 ### `structure`
 
@@ -219,7 +219,7 @@ structure:
 
 **Source field syntax:**
 - `alias:pattern` -- files matching `pattern` under the alias path
-- `[Token]/path/pattern` -- token-based path with optional glob
+- `$(Token)/path/pattern` -- token-based path with optional glob
 - Relative paths are resolved from the YAML file's directory
 - `**` globs preserve subdirectory structure
 
@@ -349,7 +349,7 @@ signing:
 ```yaml
 signing:
   pfx: "certs/MyApp.pfx"
-  pfxPassword: "[SIGN_PASSWORD]"    # --define SIGN_PASSWORD=$(SIGN_PASSWORD)
+  pfxPassword: "$(SIGN_PASSWORD)"   # --define SIGN_PASSWORD=<value>
   timestampUrl: "http://timestamp.digicert.com"
 ```
 

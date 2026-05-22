@@ -10,10 +10,10 @@ Use the `project:` key to include a single `.csproj` or `.vbproj` output without
 
 ```yaml
 aliases:
-  src: "[GitRoot]/src"
+  src: "$(GitRoot)/src"
 
 structure:
-  - project: "[src]/MyApp/MyApp.csproj"
+  - project: "$(src)/MyApp/MyApp.csproj"
     configuration: Release
     platform: x64
     excludeFiles:
@@ -34,7 +34,7 @@ Use `solution:` to include outputs from every project in a `.sln`. This is the s
 
 ```yaml
 structure:
-  - solution: "[GitRoot]/MyApp.sln"
+  - solution: "$(GitRoot)/MyApp.sln"
     configuration: Release
     excludeProjects:
       - "MyApp.Tests"
@@ -86,14 +86,14 @@ If `help/` contains `images/logo.png` and `pages/intro.html`, they install at `I
 
 ## Overriding paths for CI
 
-The standard pattern: use `[CurrentDir]` as a default in `variables:`, then override it in CI with `--define`:
+The standard pattern: use `$(CurrentDir)` as a default in `variables:`, then override it in CI with `--define`:
 
 ```yaml
 variables:
-  srcRoot: "[CurrentDir]"     # works locally when run from the source directory
+  srcRoot: "$(CurrentDir)"    # works locally when run from the source directory
 
 aliases:
-  bin: "[srcRoot]/src/MyApp/bin/Release/net481"
+  bin: "$(srcRoot)/src/MyApp/bin/Release/net481"
 ```
 
 **Local build:**
@@ -117,16 +117,16 @@ AlliePack allie-pack.yaml
 
 ## Injecting a version number at build time
 
-Use a `[VERSION]` token in the config and pass the actual value from CI:
+Use a `$(VERSION)` token in the config and pass the actual value from CI:
 
 ```yaml
 product:
   name: "My App"
-  version: "[VERSION]"
+  version: "$(VERSION)"
 ```
 
 ```
-AlliePack.exe allie-pack.yaml --define VERSION=2.1.0 --output dist\MyApp-2.1.0.msi
+AlliePack.exe allie-pack.yaml --define VERSION=2.1.0.0 --output dist\MyApp-2.1.0.msi
 ```
 
 In Azure DevOps, use the build number:
@@ -185,13 +185,13 @@ signing:
 
 ```yaml
 signing:
-  pfx: "[YamlDir]/certs/MyApp.pfx"
-  pfxPassword: "[SIGN_PASSWORD]"
+  pfx: "$(YamlDir)/certs/MyApp.pfx"
+  pfxPassword: "$(SIGN_PASSWORD)"
   timestampUrl: "http://timestamp.digicert.com"
 ```
 
 ```
-AlliePack.exe allie-pack.yaml --define SIGN_PASSWORD=$(SIGN_PASSWORD)
+AlliePack.exe allie-pack.yaml --define SIGN_PASSWORD=<value>
 ```
 
 **Azure Trusted Signing:**
@@ -202,7 +202,7 @@ signing:
     endpoint: "https://eus.codesigning.azure.net"
     account: "MySigningAccount"
     certificateProfile: "MyProfile"
-    dlibPath: '[DLIB_PATH]'
+    dlibPath: '$(DLIB_PATH)'
   timestampUrl: "http://timestamp.acs.microsoft.com"
 ```
 
@@ -356,7 +356,7 @@ groups:
     destinationDir: CONFIGDIR
     condition: notExists   # only install if file doesn't already exist yet
     files:
-      - source: "[YamlDir]/installer/defaults.config"
+      - source: "$(YamlDir)/installer/defaults.config"
         rename: "myapp.config"
 ```
 
@@ -461,7 +461,7 @@ Top-level `structure:`, `registry:`, `services:`, etc. are always installed. Fea
 
 ```yaml
 product:
-  licenseFile: "[YamlDir]/license.rtf"
+  licenseFile: "$(YamlDir)/license.rtf"
 ```
 
 The file must be in `.rtf` format. AlliePack adds a license agreement dialog to the installer UI automatically.

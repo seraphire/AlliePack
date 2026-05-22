@@ -95,8 +95,8 @@ Store the PFX as a pipeline Secure File, download it, and pass the path via `--d
 Your YAML would have:
 ```yaml
 signing:
-  pfx: "[CERT_PATH]"
-  pfxPassword: "[SIGN_PASSWORD]"
+  pfx: "$(CERT_PATH)"
+  pfxPassword: "$(SIGN_PASSWORD)"
   timestampUrl: "http://timestamp.digicert.com"
 ```
 
@@ -125,7 +125,7 @@ signing:
     account: "MySigningAccount"
     certificateProfile: "MyProfile"
     dlibPath: 'C:\Program Files\Microsoft\Azure Code Signing\x64\Azure.CodeSigning.Dlib.dll'
-    correlationId: "[BUILD_ID]"
+    correlationId: "$(BUILD_ID)"
   timestampUrl: "http://timestamp.acs.microsoft.com"
 ```
 
@@ -213,8 +213,8 @@ Store the base64-encoded PFX as a repository secret (`SIGNING_CERT_BASE64`) and 
 Your YAML:
 ```yaml
 signing:
-  pfx: "[CERT_PATH]"
-  pfxPassword: "[SIGN_PASSWORD]"
+  pfx: "$(CERT_PATH)"
+  pfxPassword: "$(SIGN_PASSWORD)"
   timestampUrl: "http://timestamp.digicert.com"
 ```
 
@@ -245,11 +245,11 @@ Use the `azure/trusted-signing-action` or pass credentials via environment varia
 
 **Never put secrets in allie-pack.yaml.** Signing passwords, certificate paths, and access tokens should always be passed via `--define` from pipeline secret variables. The YAML file should be safe to commit to source control.
 
-**Use `[CurrentDir]` or `[GitRoot]` for local builds; override with `--define` for CI.** This pattern means the YAML works correctly both locally and in CI without modification:
+**Use `$(CurrentDir)` or `$(GitRoot)` for local builds; override with `--define` for CI.** This pattern means the YAML works correctly both locally and in CI without modification:
 
 ```yaml
 variables:
-  srcRoot: "[GitRoot]"     # works locally
+  srcRoot: "$(GitRoot)"    # works locally
 ```
 
 ```

@@ -44,8 +44,8 @@ Use this when your certificate is stored as a `.pfx` file, such as in a secure f
 
 ```yaml
 signing:
-  pfx: "[YamlDir]/certs/MyApp.pfx"
-  pfxPassword: "[SIGN_PASSWORD]"
+  pfx: "$(YamlDir)/certs/MyApp.pfx"
+  pfxPassword: "$(SIGN_PASSWORD)"
   timestampUrl: "http://timestamp.digicert.com"
 ```
 
@@ -93,7 +93,7 @@ signing:
     account: "MySigningAccount"
     certificateProfile: "MyProfile"
     dlibPath: 'C:\Program Files\Microsoft\Azure Code Signing\x64\Azure.CodeSigning.Dlib.dll'
-    correlationId: "[BUILD_ID]"      # optional; shows up in Azure signing logs
+    correlationId: "$(BUILD_ID)"     # optional; shows up in Azure signing logs
   timestampUrl: "http://timestamp.acs.microsoft.com"
 ```
 
@@ -133,13 +133,13 @@ Use `command:` when you need a tool that AlliePack doesn't natively support, suc
 
 ```yaml
 signing:
-  command: 'AzureSignTool.exe sign -kvu "[KV_URL]" -kvc "[CERT_NAME]" -fd sha256 -tr "http://timestamp.acs.microsoft.com" -td sha256 "{file}"'
+  command: 'AzureSignTool.exe sign -kvu "$(KV_URL)" -kvc "$(CERT_NAME)" -fd sha256 -tr "http://timestamp.acs.microsoft.com" -td sha256 "{file}"'
 ```
 
 ```
 AlliePack.exe allie-pack.yaml
-  --define KV_URL=$(KEY_VAULT_URL)
-  --define CERT_NAME=$(CERT_NAME)
+  --define KV_URL=<key-vault-url>
+  --define CERT_NAME=<cert-name>
   --output dist\MyApp.msi
 ```
 
