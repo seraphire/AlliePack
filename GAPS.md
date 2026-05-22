@@ -14,6 +14,7 @@ phase is implemented.
 | GAP-3 | Environment variables (`environment:` block) | Phase 1 | **Closed** | gms GMS_HOME |
 | GAP-4 | Conditional file install (`condition: notExists`) | Phase 3 | **Closed** | gms default config |
 | GAP-5 | Release flags + scope-variant paths (PerUser/PerMachine) | Phase 4 | **Closed** | gms install scope |
+| GAP-6 | Portable WXS export (self-contained, no AlliePack required to compile) | Unphased | **Open** | gms pack --save-wxs art workflow |
 
 ---
 
@@ -103,6 +104,38 @@ groups:
 
 `condition: notExists` skips the component if the destination file is already
 present. Implemented as a WiX component condition.
+
+---
+
+### GAP-6 -- Portable WXS Export
+
+**Problem:** The WXS emitted by AlliePack (via WixSharp) contains references to
+WixSharp's custom action DLLs (`WixSharp.CA.dll`, `WixSharp.UI.CA.dll`). These
+DLLs are placed in the artifact directory alongside the WXS, but the paths
+embedded in the WXS may be absolute or otherwise tied to the build machine.
+As a result, compiling the WXS on a different machine — or without AlliePack
+installed — may fail.
+
+**Use case:** `gms pack` saves the WXS and collateral in an artifact subdirectory
+as a WiX workspace that can be compiled with `wix build` independently. For this
+to work on a client's machine (where AlliePack is not installed), all DLL
+references in the WXS must be relative paths that resolve within the artifact
+directory itself.
+
+**What needs to change:**
+- All `WixSharp.CA.dll` and `WixSharp.UI.CA.dll` references in the emitted WXS
+  must use paths relative to the WXS file (not absolute machine paths)
+- The artifact directory must be fully self-contained: everything needed to run
+  `wix build <name>.wxs` is present in that directory
+- This is significant because WixSharp controls how it emits CA references;
+  achieving relative paths requires either post-processing the WXS or hooking
+  into WixSharp's project configuration before build
+
+**Proposed behaviour:**
+- A `--portable-wxs` flag (or always-on behaviour) that post-processes the
+  emitted WXS to rewrite any absolute CA DLL paths to relative equivalents
+- Verification step: after rewriting, confirm all referenced files exist
+  relative to the WXS before reporting success
 
 ---
 

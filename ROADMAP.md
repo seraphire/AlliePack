@@ -1003,6 +1003,98 @@ reachable today via `wix: fragments:`.
 
 ---
 
+## Portable WXS Export
+
+> **Significant architectural change.** This requires either post-processing the
+> WixSharp-generated WXS or hooking into WixSharp's project configuration before
+> the build. WixSharp owns how it emits custom action references; rewriting them
+> to relative paths is non-trivial. See GAP-6.
+
+### The problem
+
+WixSharp injects two custom action DLLs into every MSI it builds:
+
+- `WixSharp.CA.dll` — the managed CA bootstrapper; runs at install time
+- `WixSharp.UI.CA.dll` — the managed UI CA; runs at install time
+
+References to these DLLs are embedded in the generated WXS. Currently those
+references may be absolute paths tied to the build machine, which means the WXS
+cannot be compiled on a different machine without AlliePack (or a matching
+WixSharp install) present.
+
+### The goal
+
+The artifact directory that AlliePack already produces — WXS + DLLs + dialog
+assets — should be a **complete, portable WiX workspace**. Any machine with the
+WiX 5 toolset installed should be able to run:
+
+```
+wix build avitrack-services.wxs
+```
+
+from that directory and produce a valid MSI, with no dependency on AlliePack,
+WixSharp, or the original build machine's layout.
+
+### What needs to change
+
+1. **Relative CA references** — all `WixSharp.CA.dll` and `WixSharp.UI.CA.dll`
+   path references in the WXS must be relative to the WXS file, not absolute.
+   WixSharp may support this via `project.CustomActionFiles` path configuration,
+   or it may require a post-processing pass over the emitted XML.
+
+2. **Self-contained verification** — after the WXS is written, verify that every
+   file it references (DLLs, images, licence files, and the application binaries
+   themselves) exists relative to the WXS. Report any missing references so the
+   developer knows the workspace isn't portable before they try to use it elsewhere.
+
+3. **Application binaries are out of scope for copying** — the WXS references
+   application binaries at their build output paths (e.g. `deploy\...\bin\`).
+   These are not copied into the artifact directory; the workspace is portable
+   for same-machine use once `gms build` has run. Full portability (copying
+   binaries in) is a separate, caller-driven concern.
+
+### Proposed flag
+
+```
+AlliePack.exe allie-pack.yaml --portable-wxs
+```
+
+When set, AlliePack performs the relative-path rewrite and self-contained
+verification after the build. Without the flag, behaviour is unchanged (current
+`--keep-wxs` semantics: WXS is preserved but paths are whatever WixSharp emits).
+
+Alternatively: make this the default behaviour once the rewrite is stable, and
+add `--no-portable-wxs` as the opt-out for anyone relying on the current absolute
+path form.
+
+### Why this is hard
+
+WixSharp generates the WXS internally as part of its MSI compilation pipeline.
+The CA DLL paths are set at the point WixSharp builds its `ManagedProject`. There
+are three approaches in increasing difficulty:
+
+1. **Post-process the WXS** — after `project.BuildMsi()` completes, load the
+   saved WXS as XML, find all CA file references that are absolute paths under
+   the build machine's temp or AlliePack directory, and rewrite them to relative
+   paths. Straightforward but brittle if WixSharp changes its XML structure.
+
+2. **Configure before build** — set WixSharp project properties that control
+   where it writes CA references (e.g. `project.SourceBaseDir`,
+   `project.CustomActionFiles`). Cleaner but depends on WixSharp exposing
+   sufficient control over this.
+
+3. **Replace WixSharp CAs with pure WiX equivalents** — for simple cases (env
+   vars, registry) generate raw WiX XML elements rather than going through
+   WixSharp's managed CA path entirely. This eliminates the dependency but
+   requires reimplementing the WixSharp behaviours directly in AlliePack's
+   WiX generation layer.
+
+Approach 1 is the pragmatic first step. Approach 3 is the long-term ideal but
+is only worth pursuing if WixSharp's CA model becomes a recurring portability
+problem.
+
+---
+
 ## Migration Tools
 
 Two complementary pathways for getting existing installers into AlliePack.
