@@ -610,6 +610,15 @@ namespace AlliePack
                 // them, and WiX warns when the auto-incremented suffix (~1, ~2, ...) makes the
                 // short name ambiguous across multiple files in the same directory.
                 StripShortNames(doc);
+
+                // Mark the WixSharp root feature ("Complete") as required (AllowAbsent="no").
+                // The root feature is where WixSharp places all top-level structure: items
+                // (files not assigned to a named feature).  These are "always install" content
+                // by design -- if something is optional it belongs in a features: entry, not
+                // in top-level structure.  WixSharp defaults to AllowAbsent="yes", which
+                // would let the user deselect core content like README.txt in the feature
+                // tree UI.  Overriding to "no" enforces the intended semantics.
+                RequireRootFeature(doc);
             };
 
             // Generate the WXS.  WixSharp uses project.OutDir + project.OutFileName to
@@ -750,6 +759,24 @@ namespace AlliePack
             {
                 elem.Attribute("ShortName")?.Remove();
             }
+        }
+
+        /// <summary>
+        /// Sets <c>AllowAbsent="no"</c> on WixSharp's root feature (always named
+        /// <c>"Complete"</c>).  Top-level <c>structure:</c> items -- files not assigned to
+        /// any named feature -- land in "Complete" by WixSharp convention.  These represent
+        /// always-install content (e.g. README, core directories); marking the feature
+        /// non-optional enforces that intent and prevents the user from deselecting them in
+        /// the feature-tree UI.  Named optional features retain their own <c>AllowAbsent</c>.
+        /// </summary>
+        private static void RequireRootFeature(XDocument doc)
+        {
+            var rootFeature = doc.Descendants()
+                .FirstOrDefault(e => e.Name.LocalName == "Feature"
+                                  && e.Attribute("Id")?.Value == "Complete");
+            if (rootFeature == null) return;
+
+            rootFeature.SetAttributeValue("AllowAbsent", "no");
         }
 
         private static void RewriteSourceAttr(XElement element, string attrName, string cwd, string exportDir)
