@@ -473,6 +473,16 @@ namespace AlliePack
                     project.UI = WUI.WixUI_Minimal;
             }
 
+            // When WixUI_FeatureTree is used without a license file, WiX falls back to a
+            // Lorem ipsum placeholder.  Suppress the LicenseAgreementDlg entirely by
+            // injecting <Publish> elements that override the dialog-flow transitions:
+            //   WelcomeDlg  → Next  =>  CustomizeDlg   (was: LicenseAgreementDlg)
+            //   CustomizeDlg → Back =>  WelcomeDlg     (was: LicenseAgreementDlg)
+            // Order="2" takes priority over the built-in Order="1" transitions shipped
+            // with WixUI_FeatureTree in the WixToolset.UI.wixext extension.
+            if (hasFeatures && !hasLicense && !useCustomUi)
+                project.WixSourceGenerated += SuppressLicenseDialog;
+
             // Raw WiX XML fragments -- escape hatch for anything AlliePack doesn't cover
             if (_config.Wix?.Fragments.Any() == true)
             {
@@ -759,6 +769,52 @@ namespace AlliePack
             {
                 elem.Attribute("ShortName")?.Remove();
             }
+        }
+
+        /// <summary>
+        /// Injects <c>Publish</c> elements into the WXS <c>UI</c> block to bypass the
+        /// <c>LicenseAgreementDlg</c> in <c>WixUI_FeatureTree</c> when no license file is
+        /// configured.  Without this override WiX substitutes a Lorem ipsum placeholder.
+        /// <para>
+        /// The built-in dialog transitions (Order=1) are:
+        ///   WelcomeDlg → LicenseAgreementDlg → CustomizeDlg.
+        /// The injected transitions (Order=2) short-circuit that:
+        ///   WelcomeDlg → CustomizeDlg (forward), CustomizeDlg → WelcomeDlg (back).
+        /// </para>
+        /// </summary>
+        private static void SuppressLicenseDialog(XDocument doc)
+        {
+            XNamespace wix = "http://wixtoolset.org/schemas/v4/wxs";
+
+            // Find the Package element -- all UI content lives inside it.
+            var package = doc.Descendants(wix + "Package").FirstOrDefault();
+            if (package == null) return;
+
+            // Locate an existing <UI> element or create one.
+            var ui = package.Elements(wix + "UI").FirstOrDefault();
+            if (ui == null)
+            {
+                ui = new XElement(wix + "UI");
+                package.Add(ui);
+            }
+
+            // WelcomeDlg Next -> CustomizeDlg (skip LicenseAgreementDlg).
+            ui.Add(new XElement(wix + "Publish",
+                new XAttribute("Dialog",  "WelcomeDlg"),
+                new XAttribute("Control", "Next"),
+                new XAttribute("Event",   "NewDialog"),
+                new XAttribute("Value",   "CustomizeDlg"),
+                new XAttribute("Order",   "2"),
+                "1"));
+
+            // CustomizeDlg Back -> WelcomeDlg (skip LicenseAgreementDlg on the way back).
+            ui.Add(new XElement(wix + "Publish",
+                new XAttribute("Dialog",  "CustomizeDlg"),
+                new XAttribute("Control", "Back"),
+                new XAttribute("Event",   "NewDialog"),
+                new XAttribute("Value",   "WelcomeDlg"),
+                new XAttribute("Order",   "2"),
+                "1"));
         }
 
         /// <summary>
