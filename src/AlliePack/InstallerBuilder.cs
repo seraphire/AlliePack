@@ -762,12 +762,18 @@ namespace AlliePack
         }
 
         /// <summary>
-        /// Sets <c>AllowAbsent="no"</c> on WixSharp's root feature (always named
-        /// <c>"Complete"</c>).  Top-level <c>structure:</c> items -- files not assigned to
-        /// any named feature -- land in "Complete" by WixSharp convention.  These represent
-        /// always-install content (e.g. README, core directories); marking the feature
-        /// non-optional enforces that intent and prevents the user from deselecting them in
-        /// the feature-tree UI.  Named optional features retain their own <c>AllowAbsent</c>.
+        /// Sets <c>AllowAbsent="no"</c> and <c>Display="hidden"</c> on WixSharp's root
+        /// feature (always named <c>"Complete"</c>).  Top-level <c>structure:</c> items --
+        /// files not assigned to any named feature -- land in "Complete" by WixSharp
+        /// convention.  These represent always-install content (e.g. README, core
+        /// directories).
+        /// <list type="bullet">
+        ///   <item><c>AllowAbsent="no"</c> -- prevents the user from deselecting the feature.</item>
+        ///   <item><c>Display="hidden"</c> -- removes it from the feature-tree UI entirely so
+        ///     the user only sees the named optional features (services), not an ambiguous
+        ///     "Complete" entry at the bottom of the list.</item>
+        /// </list>
+        /// Named optional features retain their own <c>AllowAbsent</c> and <c>Display</c>.
         /// </summary>
         private static void RequireRootFeature(XDocument doc)
         {
@@ -777,6 +783,7 @@ namespace AlliePack
             if (rootFeature == null) return;
 
             rootFeature.SetAttributeValue("AllowAbsent", "no");
+            rootFeature.SetAttributeValue("Display", "hidden");
         }
 
         private static void RewriteSourceAttr(XElement element, string attrName, string cwd, string exportDir)
