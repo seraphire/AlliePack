@@ -799,22 +799,23 @@ namespace AlliePack
             }
 
             // WelcomeDlg Next -> CustomizeDlg (skip LicenseAgreementDlg).
+            // WiX 5 uses Condition= attribute; inner text ("1") is no longer valid (WIX0400).
             ui.Add(new XElement(wix + "Publish",
-                new XAttribute("Dialog",  "WelcomeDlg"),
-                new XAttribute("Control", "Next"),
-                new XAttribute("Event",   "NewDialog"),
-                new XAttribute("Value",   "CustomizeDlg"),
-                new XAttribute("Order",   "2"),
-                "1"));
+                new XAttribute("Dialog",    "WelcomeDlg"),
+                new XAttribute("Control",   "Next"),
+                new XAttribute("Event",     "NewDialog"),
+                new XAttribute("Value",     "CustomizeDlg"),
+                new XAttribute("Order",     "2"),
+                new XAttribute("Condition", "1")));
 
             // CustomizeDlg Back -> WelcomeDlg (skip LicenseAgreementDlg on the way back).
             ui.Add(new XElement(wix + "Publish",
-                new XAttribute("Dialog",  "CustomizeDlg"),
-                new XAttribute("Control", "Back"),
-                new XAttribute("Event",   "NewDialog"),
-                new XAttribute("Value",   "WelcomeDlg"),
-                new XAttribute("Order",   "2"),
-                "1"));
+                new XAttribute("Dialog",    "CustomizeDlg"),
+                new XAttribute("Control",   "Back"),
+                new XAttribute("Event",     "NewDialog"),
+                new XAttribute("Value",     "WelcomeDlg"),
+                new XAttribute("Order",     "2"),
+                new XAttribute("Condition", "1")));
         }
 
         /// <summary>
