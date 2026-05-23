@@ -591,11 +591,19 @@ namespace AlliePack
 
             project.WixSourceGenerated += doc =>
             {
+                var package = doc.Descendants(wixNs + "Package").FirstOrDefault();
+
                 // Rewrite <Package Version="..."> to a WiX preprocessor variable so the
                 // customer CI pipeline can supply the version at wix.exe compile time.
-                doc.Descendants(wixNs + "Package")
-                   .FirstOrDefault()
-                   ?.SetAttributeValue("Version", "$(var.Version)");
+                package?.SetAttributeValue("Version", "$(var.Version)");
+
+                // Remove the auto-generated ProductCode so WiX generates a fresh one at
+                // each wix build invocation.  This keeps the committed WXS stable (no
+                // random GUID changing every Milestone-deploy) while still ensuring every
+                // built MSI gets a unique ProductCode -- which is what triggers the
+                // Windows Installer major-upgrade logic to replace the old installation.
+                // The UpgradeCode in allie.yaml remains the stable product-family identifier.
+                package?.Attribute("ProductCode")?.Remove();
 
                 // Rewrite all Source / SourceFile attributes to be relative to the export
                 // directory.  WixSharp writes paths relative to CWD; we normalise them to
