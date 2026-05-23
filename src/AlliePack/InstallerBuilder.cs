@@ -597,6 +597,13 @@ namespace AlliePack
                     RewriteSourceAttr(element, "Source",     cwd, exportDir);
                     RewriteSourceAttr(element, "SourceFile", cwd, exportDir);
                 }
+
+                // Shorten any identifiers that exceed the WiX 72-char soft limit (WIX1026).
+                // WixSharp emits IDs like Component.<dll-name>_<crc> which can exceed 72
+                // chars for long Microsoft.Extensions.* DLL names.  Build a deterministic
+                // mapping (long -> short) and apply it to every attribute in the document so
+                // that Component Id and ComponentRef Id stay in sync.
+                ShortenLongIds(doc);
             };
 
             // Generate the WXS.  WixSharp uses project.OutDir + project.OutFileName to
@@ -673,6 +680,55 @@ namespace AlliePack
         /// Files that live in system directories (ProgramData, Windows) are copied into the
         /// export directory and referenced by filename only.
         /// </summary>
+        /// <summary>
+        /// Shortens WXS identifier attributes that exceed the WiX 72-character soft limit
+        /// (warning WIX1026).  Builds a deterministic long-to-short mapping using a SHA256
+        /// digest and applies it to every attribute in the document so that, for example,
+        /// Component/@Id and ComponentRef/@Id remain consistent.
+        /// </summary>
+        private static void ShortenLongIds(XDocument doc)
+        {
+            const int MaxLen = 72;
+
+            // Pass 1: collect every over-length Id value and compute a stable short form.
+            var mapping = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var elem in doc.Descendants())
+            {
+                var idAttr = elem.Attribute("Id");
+                if (idAttr == null) continue;
+                var id = idAttr.Value;
+                if (id.Length > MaxLen && !mapping.ContainsKey(id))
+                    mapping[id] = MakeShortId(id);
+            }
+
+            if (mapping.Count == 0) return;
+
+            // Pass 2: apply mapping to every attribute whose value appears in the mapping.
+            // This covers both Id= declarations and all *Ref= references (ComponentRef, etc.).
+            foreach (var elem in doc.Descendants())
+            {
+                foreach (var attr in elem.Attributes().ToList())
+                {
+                    if (mapping.TryGetValue(attr.Value, out var shortId))
+                        attr.SetValue(shortId);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Produces a stable identifier under 72 chars by hashing the original value with
+        /// SHA256 and encoding the first 12 bytes as a lowercase hex string.
+        /// Format: "cmp_" + 24 hex chars = 28 chars total.
+        /// The "cmp_" prefix is distinct from WixSharp's "Component." prefix so there is
+        /// no risk of colliding with non-truncated identifiers.
+        /// </summary>
+        private static string MakeShortId(string original)
+        {
+            using var sha = SHA256.Create();
+            var bytes = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(original));
+            return "cmp_" + BitConverter.ToString(bytes, 0, 12).Replace("-", "").ToLowerInvariant();
+        }
+
         private static void RewriteSourceAttr(XElement element, string attrName, string cwd, string exportDir)
         {
             var attr = element.Attribute(attrName);
@@ -1000,7 +1056,7 @@ Write-Host ""Done: $msiPath""
 
             var shortcut = new FileShortcut(s.Name, folder) { Description = s.Description };
             if (!string.IsNullOrEmpty(s.Icon))
-                shortcut.IconFile = _resolver.Resolve(s.Icon);
+                shortcut.IconFile = _resolver.Resolve(s.Icon!);
             wixFile.Shortcuts = (wixFile.Shortcuts ?? new FileShortcut[0]).Concat(new[] { shortcut }).ToArray();
         }
 
@@ -1145,7 +1201,7 @@ Write-Host ""Done: $msiPath""
             string newPath = currentPath;
             if (!string.IsNullOrEmpty(element.FolderName))
             {
-                if (element.FolderName.StartsWith("["))
+                if (element.FolderName!.StartsWith("["))
                     newPath = element.FolderName;
                 else
                     newPath = Path.Combine(currentPath, element.FolderName);
