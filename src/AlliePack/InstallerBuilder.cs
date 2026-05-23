@@ -604,6 +604,12 @@ namespace AlliePack
                 // mapping (long -> short) and apply it to every attribute in the document so
                 // that Component Id and ComponentRef Id stay in sync.
                 ShortenLongIds(doc);
+
+                // Remove auto-generated 8.3 ShortName attributes from File elements (WIX1044).
+                // WixSharp generates these for long filenames but modern Windows does not need
+                // them, and WiX warns when the auto-incremented suffix (~1, ~2, ...) makes the
+                // short name ambiguous across multiple files in the same directory.
+                StripShortNames(doc);
             };
 
             // Generate the WXS.  WixSharp uses project.OutDir + project.OutFileName to
@@ -727,6 +733,23 @@ namespace AlliePack
             using var sha = SHA256.Create();
             var bytes = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(original));
             return "cmp_" + BitConverter.ToString(bytes, 0, 12).Replace("-", "").ToLowerInvariant();
+        }
+
+        /// <summary>
+        /// Removes the auto-generated <c>ShortName</c> attribute from all <c>File</c> elements
+        /// in the WXS document.  WixSharp derives 8.3 short names for long filenames, but when
+        /// many files share the same prefix (e.g. "Microsoft.Extensions.*"), WiX assigns
+        /// sequential suffixes (MICROS~1.DLL, MICROS~2.DLL, ...) and then warns WIX1044 that
+        /// these are ambiguous.  Modern Windows targets do not need 8.3 names, so the safest
+        /// fix is to omit <c>ShortName</c> entirely and let Windows manage short-name generation
+        /// (or skip it when 8.3 support is disabled on the target volume, which is typical).
+        /// </summary>
+        private static void StripShortNames(XDocument doc)
+        {
+            foreach (var elem in doc.Descendants())
+            {
+                elem.Attribute("ShortName")?.Remove();
+            }
         }
 
         private static void RewriteSourceAttr(XElement element, string attrName, string cwd, string exportDir)
