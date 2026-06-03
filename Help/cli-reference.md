@@ -129,6 +129,40 @@ Preserve the generated `.wxs` WiX source file after building. The file is writte
 AlliePack.exe allie-pack.yaml --keep-wxs
 ```
 
+### `--export-wxs`
+
+Export a portable, self-contained WXS artifact directory instead of building an MSI. Use `-o` / `--output` to specify the export directory; defaults to `<ProductName>-wxs` in the current directory.
+
+```
+AlliePack.exe allie-pack.yaml --export-wxs
+AlliePack.exe allie-pack.yaml --export-wxs -o dist\installer-src
+```
+
+The export directory contains everything needed to compile the MSI independently with `wix.exe` — no AlliePack or WixSharp installation required on the build machine:
+
+- `<ProductName>.wxs` — WiX source file with all paths relative to the export directory
+- `build.ps1` — build script; pass `-Version` to stamp the MSI version
+- WixSharp runtime DLLs (only those actually referenced by the WXS)
+- Any WiX extension DLLs required by the config (bundled alongside the WXS)
+- All referenced installer assets (license file, dialog images, etc.)
+
+**Building from the exported artifact:**
+
+```powershell
+cd dist\installer-src
+.\build.ps1 -Version 2.1.0
+```
+
+Or invoke `wix.exe` directly:
+
+```
+wix build MyApp.wxs -d Version=2.1.0 -o MyApp-2.1.0.msi
+```
+
+**ProductCode behavior:** The `ProductCode` attribute is omitted from the exported WXS. Each `wix build` invocation auto-generates a fresh ProductCode, which is what triggers Windows Installer's major-upgrade logic. The `UpgradeCode` in your config remains the stable product-family identifier across all versions.
+
+**Typical use case:** CI pipeline at a customer site that does not (and should not) have AlliePack installed. Run AlliePack once in your own build to produce the artifact, commit or publish the artifact directory, then have the customer's pipeline build the versioned MSI from it.
+
 ## Environment variables
 
 | Variable | Effect |

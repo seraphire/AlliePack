@@ -294,7 +294,18 @@ features:
           - source: "scripts:MyApp.psm1"
 ```
 
-Content in the top-level `structure:`, `shortcuts:`, etc. blocks is always installed regardless of feature selection. Features contain the optional, selectable content.
+### What's always installed vs. what's selectable
+
+Content in the top-level `structure:`, `shortcuts:`, `services:`, etc. blocks is grouped into a hidden root feature that is **always installed** — it cannot be deselected in the feature tree UI. This is intentional: top-level content is the core application, not optional add-ons.
+
+Only entries declared in `features:` appear as checkboxes in the installer's feature selection dialog. If you want something to be optional, put it in a `features:` entry rather than at the top level.
+
+The practical split:
+
+| Content location | Shown in feature tree? | Can be deselected? |
+|---|---|---|
+| Top-level `structure:`, `shortcuts:`, etc. | No (hidden root feature) | No (always installed) |
+| Inside a `features:` entry | Yes | Yes (subject to `default:`) |
 
 ---
 

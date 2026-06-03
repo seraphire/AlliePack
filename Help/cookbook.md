@@ -515,6 +515,42 @@ This example disables the Modify and Repair buttons in Add/Remove Programs, whic
 
 ---
 
+## Exporting a portable WXS artifact
+
+Use `--export-wxs` when a downstream pipeline needs to compile the MSI without AlliePack installed — for example, a customer's CI that only has `wix.exe`:
+
+```
+AlliePack.exe allie-pack.yaml --export-wxs -o dist\installer-src
+```
+
+The output directory is self-contained:
+
+```
+dist\installer-src\
+  MyApp.wxs          <- WiX source, all paths relative to this directory
+  build.ps1          <- build script; pass -Version to stamp the MSI
+  WixSharp.CA.dll    <- runtime DLL referenced by the WXS
+  WixUI_en-US.wxl    <- dialog strings (if using standard UI)
+  logo.png           <- any bundled assets
+```
+
+Build the MSI from the artifact on any machine with `wix.exe`:
+
+```powershell
+cd dist\installer-src
+.\build.ps1 -Version 2.1.0
+```
+
+Or invoke `wix.exe` directly to control the output path:
+
+```
+wix build MyApp.wxs -d Version=2.1.0 -o C:\releases\MyApp-2.1.0.msi
+```
+
+A fresh `ProductCode` is generated on every `wix build` invocation (it's omitted from the WXS intentionally), so each compiled MSI triggers Windows Installer's major-upgrade path. The `upgradeCode` in your YAML is what ties all versions together as the same product.
+
+---
+
 ## Validating your config without building
 
 Run `--report` any time you want to check your config without invoking the WiX compiler:

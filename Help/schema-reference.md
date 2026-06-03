@@ -40,6 +40,7 @@ wix:              # optional
 | `installDir` | string or conditional | no | `[ProgramFilesFolder]\Manufacturer\Name` | Root install directory |
 | `platform` | string | no | `x86` | `x86`, `x64`, or `arm64` |
 | `licenseFile` | string | no | — | Path to an `.rtf` file. Adds a license agreement dialog to the installer UI. |
+| `ui` | string | no | `standard` | Installer dialog set: `standard` (built-in WiX dialogs) or `custom` (WixSharp WPF EmbeddedUI). See [Installer UI](#installer-ui). |
 
 ### Version sourcing
 
@@ -60,6 +61,21 @@ version:
 version:
   source: "git-tag"
   tagPrefix: "v"            # optional; matches tags like v1.2.3
+```
+
+### Installer UI
+
+The `ui:` field selects the installer dialog set.
+
+| Value | Behavior |
+|---|---|
+| `standard` (default) | Uses WiX's built-in managed dialog set. AlliePack automatically picks the right variant: `WixUI_FeatureTree` when `features:` are declared, `WixUI_InstallDir` when a `licenseFile:` is set, or `WixUI_Minimal` for a simple service-style install. No additional DLLs are required in the export artifact beyond the WixSharp runtime. |
+| `custom` | Uses WixSharp's WPF EmbeddedUI. Provides a fully customizable WPF-based dialog stack. Requires `WixSharp.UI.CA.dll` in the export artifact. |
+
+```yaml
+product:
+  name: "My App"
+  ui: standard    # omit to get the same result
 ```
 
 ---
