@@ -45,10 +45,34 @@ Download the latest `AlliePack.exe` from the releases page and place it somewher
 ```
 git clone <repository-url>
 cd AlliePack
-dotnet build src/AlliePack/AlliePack.csproj -c Release
 ```
 
-The built executable is at `src/AlliePack/bin/Release/net481/AlliePack.exe`.
+Then use the build scripts in `tools\`:
+
+```powershell
+# Compile AlliePack (runs tests by default)
+.\tools\Build-AlliePack.ps1
+
+# Or skip tests for a faster build
+.\tools\Build-AlliePack.ps1 -NoTests
+```
+
+The built executable is at `src\AlliePack\bin\Release\net481\AlliePack.exe`.
+
+To also build AlliePack's own MSI installer from source:
+
+```powershell
+# Compiles AlliePack then builds the MSI into dist\AlliePack.msi
+.\tools\Build-AlliePack-Installer.ps1
+
+# If you've already compiled and just want the MSI
+.\tools\Build-AlliePack-Installer.ps1 -NoBuild
+
+# Specify an output directory
+.\tools\Build-AlliePack-Installer.ps1 -OutputPath C:\releases
+```
+
+The MSI version is derived automatically from the nearest `v*` git tag.
 
 ## Verifying the installation
 

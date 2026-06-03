@@ -105,6 +105,7 @@ Or find it in **Settings > Apps** and uninstall from there.
 | Add registry keys, services, environment variables | [Schema Guide](schema-guide.md) |
 | Use a .sln or .csproj as the source instead of a folder | [Cookbook: Adding a Visual Studio project](cookbook.md#adding-a-visual-studio-project) |
 | Inject the version from the build | [Cookbook: Version from git tags](cookbook.md#version-from-git-tags) |
+| Export a portable WXS for a customer's CI to compile | [Cookbook: Exporting a portable WXS artifact](cookbook.md#exporting-a-portable-wxs-artifact) |
 | Sign the MSI | [Signing](signing.md) |
 | Build from a pipeline | [CI/CD Integration](ci-cd.md) |
 | Understand all config options | [Schema Reference](schema-reference.md) |
