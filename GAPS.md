@@ -16,6 +16,8 @@ phase is implemented.
 | GAP-5 | Release flags + scope-variant paths (PerUser/PerMachine) | Phase 4 | **Closed** | gms install scope |
 | GAP-6 | Portable WXS export (self-contained, no AlliePack required to compile) | Unphased | **Closed** | gms pack --save-wxs art workflow |
 | GAP-7 | CLI should accept repeated `--define` flags (QOL) | Unphased | **Open** | LeadView _make_package (Solution + DocRoot) |
+| GAP-8 | Exported `WixSharp.CA.dll` is non-deterministic (churns every export) | Unphased | **Open** | LeadView committed pack/ workflow |
+| GAP-9 | Option to omit WixSharp runtime CA for pure-WiX export (no managed CAs) | Unphased | **Open** | LeadView (standard UI, no custom actions) |
 
 ---
 
@@ -212,3 +214,55 @@ CommandLineParser sees them, or by switching to a parser configuration that
 allows multiple occurrences of a sequence option.
 
 **Workaround:** pass all tokens after one flag: `--define KEY1=V1 KEY2=V2`.
+
+---
+
+### GAP-8 -- Non-deterministic `WixSharp.CA.dll` in the exported artifact
+
+**Problem:** `--export-wxs` stages `WixSharp.CA.dll` into the export directory,
+and WixSharp produces it non-deterministically -- two exports from identical
+inputs yield a binary that is the same size but differs by a few bytes (MVID /
+timestamp region in the assembly metadata). In the committed-artifact workflow
+(GAP-6), where the export directory is checked into git so CI can compile it
+without AlliePack, this means every `--export-wxs` run dirties
+`WixSharp.CA.dll` even though it is functionally identical:
+
+```
+LeadView committed pack/: WixSharp.CA.dll -- 4 bytes differ each run, same size
+```
+
+**Impact:** harmless but noisy. Teams must either re-commit an identical-but-
+different DLL on every delivery run, or routinely discard the trivial change
+(`git checkout -- delivery/pack/WixSharp.CA.dll`) and only re-commit when the
+AlliePack/WixSharp version actually changes.
+
+**Proposed direction:** make the staged CA DLL deterministic (e.g. copy a fixed
+NuGet-provided binary rather than a freshly stamped one), or document the
+discard-on-routine-run guidance. Largely moot for projects that can adopt GAP-9.
+
+---
+
+### GAP-9 -- Omit the WixSharp runtime CA for pure-WiX exports
+
+**Problem:** WixSharp's `Compiler.BuildWxs` unconditionally emits a
+`WixSharp_InitRuntime_Action` custom action backed by `<Binary
+SourceFile="WixSharp.CA.dll" />` (plus `Software\WixSharp\Used` registry
+markers), regardless of whether the project defines any managed custom actions.
+For a standard-UI installer with no managed CAs -- the common AlliePack case --
+this is dead scaffolding that nonetheless forces `WixSharp.CA.dll` to be
+embedded in the MSI and committed alongside the exported WXS.
+
+This is the same limitation first surfaced when evaluating whether AlliePack
+could emit a CA-free WXS: the runtime CA is part of WixSharp's default output.
+
+**Use case:** the LeadView installer (`ui: standard`, no custom actions) ships
+an embedded `WixSharp.CA.dll` and a WixSharp init CA it never exercises. A truly
+WixSharp-free MSI would need none of it.
+
+**Proposed enhancement:** when the resolved project defines no managed custom
+actions, post-process the generated WXS to remove the WixSharp runtime CA, its
+`<Binary>`, the matching `InstallExecuteSequence` entry, and the
+`Software\WixSharp\Used` registry markers -- yielding a pure-WiX WXS with no
+`WixSharp.CA.dll` dependency. Needs validation that nothing else in the WixSharp
+output relies on the init action. Would also resolve GAP-8 for these projects
+(no CA DLL -> no churn).
