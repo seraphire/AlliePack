@@ -18,6 +18,7 @@ phase is implemented.
 | GAP-7 | CLI should accept repeated `--define` flags (QOL) | Unphased | **Open** | LeadView _make_package (Solution + DocRoot) |
 | GAP-8 | Exported `WixSharp.CA.dll` is non-deterministic (churns every export) | Unphased | **Open** | LeadView committed pack/ workflow |
 | GAP-9 | Option to omit WixSharp runtime CA for pure-WiX export (no managed CAs) | Unphased | **Open** | LeadView (standard UI, no custom actions) |
+| GAP-10 | Shortcut without `description:` emits empty `Description=""` (WiX0006) | Unphased | **Open** | Drawing06 (description-less shortcuts) |
 
 ---
 
@@ -266,3 +267,35 @@ actions, post-process the generated WXS to remove the WixSharp runtime CA, its
 `WixSharp.CA.dll` dependency. Needs validation that nothing else in the WixSharp
 output relies on the init action. Would also resolve GAP-8 for these projects
 (no CA DLL -> no churn).
+
+---
+
+### GAP-10 -- Description-less shortcut emits empty `Description=""`
+
+**Problem:** `AttachShortcut` (InstallerBuilder.cs) sets the shortcut description
+unconditionally:
+
+```csharp
+var shortcut = new FileShortcut(s.Name, folder) { Description = s.Description };
+```
+
+When a `shortcuts:` entry omits `description:`, `s.Description` is null/empty and
+the generated WXS gets `Description=""`.  WiX 5 rejects that:
+
+```
+error WIX0006: The Shortcut/@Description attribute's value cannot be an empty
+string. If a value is not required, simply remove the entire attribute.
+```
+
+So a perfectly valid config (shortcut with just `name`/`target`/`folder`) produces
+a WXS that fails `wix build`.  It bit the Drawing06 installer, whose shortcuts had
+no descriptions.
+
+**Proposed fix:** only assign the description when it is non-empty, e.g.
+
+```csharp
+var shortcut = new FileShortcut(s.Name, folder);
+if (!string.IsNullOrEmpty(s.Description)) shortcut.Description = s.Description;
+```
+
+**Workaround:** give every shortcut a non-empty `description:` in the YAML.
