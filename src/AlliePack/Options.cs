@@ -19,6 +19,11 @@ namespace AlliePack
         [Option('v', "verbose", Required = false, HelpText = "Enable verbose output.")]
         public bool Verbose { get; set; }
 
+        // QOL enhancement (GAPS.md GAP-7): CommandLineParser rejects a repeated
+        // -D/--define flag ("Option 'D, define' is defined multiple times").
+        // Only the space-separated form (-D A=1 B=2) is accepted today; we should
+        // also allow repeated flags (-D A=1 -D B=2), e.g. by coalescing argv before
+        // parsing.
         [Option('D', "define", Required = false,
             HelpText = "Define substitution tokens used in the config file. Format: KEY=VALUE. " +
                        "Replaces [KEY] anywhere in the YAML before parsing. " +

@@ -15,6 +15,7 @@ phase is implemented.
 | GAP-4 | Conditional file install (`condition: notExists`) | Phase 3 | **Closed** | gms default config |
 | GAP-5 | Release flags + scope-variant paths (PerUser/PerMachine) | Phase 4 | **Closed** | gms install scope |
 | GAP-6 | Portable WXS export (self-contained, no AlliePack required to compile) | Unphased | **Closed** | gms pack --save-wxs art workflow |
+| GAP-7 | CLI should accept repeated `--define` flags (QOL) | Unphased | **Open** | LeadView _make_package (Solution + DocRoot) |
 
 ---
 
@@ -180,3 +181,34 @@ The conditional map syntax (`FlagName: value`, `_else: fallback`) applies to
 any field that currently accepts a scalar: `installScope`, `installDir`,
 `directories[].path`, `environment[].scope`, `environment[].value`, and
 `registry[].value`.
+
+---
+
+### GAP-7 -- Repeated `--define` flags (QOL)
+
+**Problem:** `--define` is bound to an `IEnumerable<string>` (Options.cs), and
+CommandLineParser rejects the same option name appearing more than once:
+
+```
+AlliePack.exe config.yaml --define A=1 --define B=2
+  ERROR(S): Option 'D, define' is defined multiple times.
+```
+
+Today the only accepted form is space-separated values after a single flag:
+
+```
+AlliePack.exe config.yaml --define A=1 B=2
+```
+
+The repeated-flag form is the more natural expectation -- especially when a
+caller builds the command up programmatically (e.g. a script appending one
+`--define KEY=VALUE` per override). It bit the LeadView `_make_package.cmd`
+workflow, which needed to inject both `Solution` and `DocRoot`.
+
+**Proposed enhancement:** accept repeated `--define` flags and merge them with
+the space-separated form (both should work). Likely implemented by
+pre-processing argv to coalesce repeated `-D/--define` occurrences before
+CommandLineParser sees them, or by switching to a parser configuration that
+allows multiple occurrences of a sequence option.
+
+**Workaround:** pass all tokens after one flag: `--define KEY1=V1 KEY2=V2`.
