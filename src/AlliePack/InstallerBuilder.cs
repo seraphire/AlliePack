@@ -644,22 +644,17 @@ namespace AlliePack
             // wix.exe -- it produces only the XML source file.
             Compiler.BuildWxs(project, Compiler.OutputType.MSI);
 
-            // WixSharp unconditionally copies WixSharp.UI.CA.dll to the output directory
-            // even when ManagedUI is not set.  Remove it in standard-UI mode so the export
-            // artifact only contains files the WXS actually references.
-            bool exportUsesCustomUi = string.Equals(_config.Ui, "custom", StringComparison.OrdinalIgnoreCase);
-            if (!exportUsesCustomUi)
-            {
-                string uiCaDll = Path.Combine(exportDir, "WixSharp.UI.CA.dll");
-                if (System.IO.File.Exists(uiCaDll))
-                    System.IO.File.Delete(uiCaDll);
-            }
+            string wxsPath = Path.Combine(exportDir, safeName + ".wxs");
+
+            // WixSharp stages CA DLLs to the output directory regardless of whether the
+            // generated WXS actually references them.  Scan the WXS and remove any that
+            // aren't referenced so the export artifact only contains what the build needs.
+            PruneUnreferencedCaDlls(wxsPath, exportDir);
 
             // Detect which WiX extensions are required by scanning the generated WXS for
             // non-core namespaces.  Find each extension DLL on disk and copy it into the
             // export directory so the artifact is self-contained; the build.ps1 will
             // reference the local copy by path rather than by package name.
-            string wxsPath = Path.Combine(exportDir, safeName + ".wxs");
             var extensions = DetectWixExtensions(wxsPath);
 
             // Resolve and bundle extension DLLs
@@ -894,6 +889,24 @@ namespace AlliePack
             string windows     = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
             return absPath.StartsWith(programData, StringComparison.OrdinalIgnoreCase)
                 || absPath.StartsWith(windows,     StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void PruneUnreferencedCaDlls(string wxsPath, string exportDir)
+        {
+            XNamespace wixNs = "http://wixtoolset.org/schemas/v4/wxs";
+            var doc = XDocument.Load(wxsPath);
+
+            var referenced = doc.Descendants(wixNs + "Binary")
+                .Select(e => e.Attribute("SourceFile")?.Value)
+                .Where(v => v != null && v.EndsWith(".CA.dll", StringComparison.OrdinalIgnoreCase))
+                .Select(v => Path.GetFileName(v!))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            foreach (string dll in Directory.GetFiles(exportDir, "*.CA.dll"))
+            {
+                if (!referenced.Contains(Path.GetFileName(dll)))
+                    System.IO.File.Delete(dll);
+            }
         }
 
         /// <summary>Computes a path relative from <paramref name="fromDir"/> to <paramref name="toPath"/>.</summary>
