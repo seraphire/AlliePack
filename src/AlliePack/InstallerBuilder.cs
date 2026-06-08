@@ -657,9 +657,10 @@ namespace AlliePack
             // reference the local copy by path rather than by package name.
             var extensions = DetectWixExtensions(wxsPath);
 
-            // Resolve and bundle extension DLLs
-            // extRefs: the -ext argument to use in build.ps1 (local filename if bundled,
-            //          package name if the DLL couldn't be found locally)
+            // Resolve and bundle extension DLLs.
+            // Find wix.exe now so we can auto-install any extension that isn't cached yet.
+            string? wixExe = FindWixExe();
+
             var extRefs = new List<string>();
             foreach (var ext in extensions)
             {
@@ -668,19 +669,27 @@ namespace AlliePack
                 string localDllName = ext.Replace(".wix4", ".wixext") + ".dll";
                 string localDllPath = Path.Combine(exportDir, localDllName);
 
-                // If the DLL is already present in the export dir (committed alongside
-                // the WXS, or left by a prior run), reference it directly without
-                // touching the global extension cache.  This is the common case on a
-                // clean checkout where the delivery repo contains pre-bundled DLLs.
+                // 1. DLL already present in export dir (committed alongside the WXS or
+                //    left by a prior run) -- reference it directly, no cache lookup needed.
                 if (System.IO.File.Exists(localDllPath))
                 {
                     extRefs.Add(localDllName);
                     continue;
                 }
 
-                // DLL not present locally -- try the global wix extension cache
-                // (~/.wix/extensions/{name}/{version}/wixext5/{name}.dll).
+                // 2. Try the global wix extension cache
+                //    (~/.wix/extensions/{name}/{version}/wixext5/{name}.dll).
                 string? dllSrc = FindWixExtensionDll(ext);
+
+                // 3. Not cached -- attempt auto-install via 'wix extension add'.
+                if (dllSrc == null && wixExe != null)
+                {
+                    Console.WriteLine($"  Warning: WiX extension not found in cache: {ext}");
+                    Console.WriteLine($"  Running: wix extension add {ext}");
+                    if (TryAddWixExtension(wixExe, ext))
+                        dllSrc = FindWixExtensionDll(ext);
+                }
+
                 if (dllSrc != null)
                 {
                     System.IO.File.Copy(dllSrc, localDllPath);
@@ -688,10 +697,15 @@ namespace AlliePack
                 }
                 else
                 {
-                    extRefs.Add(ext);   // package name fallback
-                    Console.WriteLine($"  Warning: WiX extension DLL not found for '{ext}'; " +
-                                      $"build.ps1 will reference it by package name. " +
-                                      $"Run 'wix extension add {ext}' on the target machine if the build fails.");
+                    // Hard fail -- a raw package name is not a valid -ext argument for
+                    // wix.exe.  Instruct the user exactly what to run before retrying.
+                    string installInstr = wixExe != null
+                        ? $"wix extension add {ext}"
+                        : $"dotnet tool install --global wix --version 5.*\n  wix extension add {ext}";
+                    throw new InvalidOperationException(
+                        $"WiX extension not found and could not be auto-installed: {ext}\n" +
+                        $"Run the following and then re-run AlliePack:\n" +
+                        $"  {installInstr}");
                 }
             }
 
@@ -1007,6 +1021,78 @@ namespace AlliePack
                 if (System.IO.File.Exists(dll)) return dll;
             }
             return null;
+        }
+
+        /// <summary>
+        /// Locates wix.exe on the current machine: checks PATH first, then the default
+        /// .NET global tools location (<c>%USERPROFILE%\.dotnet\tools\wix.exe</c>).
+        /// Returns null if wix.exe cannot be found.
+        /// </summary>
+        private static string? FindWixExe()
+        {
+            // 1. Check PATH (standard developer environment and CI agents)
+            try
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo("where", "wix")
+                {
+                    UseShellExecute        = false,
+                    CreateNoWindow         = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError  = true,
+                };
+                using var p = System.Diagnostics.Process.Start(psi);
+                if (p != null)
+                {
+                    var first = p.StandardOutput.ReadLine()?.Trim();
+                    p.WaitForExit();
+                    if (p.ExitCode == 0 && !string.IsNullOrEmpty(first) && System.IO.File.Exists(first))
+                        return first;
+                }
+            }
+            catch { /* PATH lookup unavailable -- fall through */ }
+
+            // 2. Default location when WiX v5 is installed as a .NET global tool
+            string dotnetTools = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".dotnet", "tools", "wix.exe");
+            if (System.IO.File.Exists(dotnetTools))
+                return dotnetTools;
+
+            return null;
+        }
+
+        /// <summary>
+        /// Runs <c>wix extension add {packageName}</c> to install a WiX extension into the
+        /// user's global extension cache (<c>~/.wix/extensions/</c>).
+        /// Prints the command output to the console and returns true if it succeeded.
+        /// </summary>
+        private static bool TryAddWixExtension(string wixExe, string packageName)
+        {
+            try
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo(wixExe, $"extension add {packageName}")
+                {
+                    UseShellExecute        = false,
+                    CreateNoWindow         = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError  = true,
+                };
+                using var p = System.Diagnostics.Process.Start(psi);
+                if (p == null) return false;
+
+                string stdout = p.StandardOutput.ReadToEnd();
+                string stderr = p.StandardError.ReadToEnd();
+                p.WaitForExit();
+
+                if (!string.IsNullOrWhiteSpace(stdout)) Console.WriteLine(stdout.TrimEnd());
+                if (!string.IsNullOrWhiteSpace(stderr)) Console.Error.WriteLine(stderr.TrimEnd());
+                return p.ExitCode == 0;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"  wix extension add failed: {ex.Message}");
+                return false;
+            }
         }
 
         /// <summary>

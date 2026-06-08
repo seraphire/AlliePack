@@ -34,6 +34,28 @@ You should see `5.x.x` or higher. If `dotnet` is not available, install the .NET
 
 > **Note:** On CI agents (Azure DevOps hosted agents, GitHub Actions `windows-latest`), the .NET SDK is pre-installed. Run the `dotnet tool install` step once at the start of your pipeline.
 
+### 3. WiX extensions
+
+Many AlliePack configs require WiX extension packages (the standard UI dialog set alone requires `WixToolset.UI.wix4`). When running `--export-wxs`, AlliePack will attempt to install any missing extensions automatically. To avoid the auto-install step — or if your environment has no network access — install the extensions up front:
+
+```
+wix extension add WixToolset.UI.wix4
+wix extension add WixToolset.Util.wix4
+```
+
+Which extensions are needed depends on your config:
+
+| Extension | When required |
+|---|---|
+| `WixToolset.UI.wix4` | Always — standard UI dialog set (`ui: standard` is the default) |
+| `WixToolset.Util.wix4` | When `util:` actions are used (service config, environment variables, etc.) |
+| `WixToolset.Firewall.wix4` | When `firewall:` rules are configured |
+| `WixToolset.NetFx.wix4` | When `netFx:` prerequisites are configured |
+| `WixToolset.Iis.wix4` | When `iis:` configuration is used |
+| `WixToolset.Sql.wix4` | When `sql:` configuration is used |
+
+> **Note for consumers of exported WXS artifacts:** When AlliePack produces a `--export-wxs` artifact it bundles the required extension DLLs alongside the WXS file. The machine that builds the MSI using `build.ps1` does **not** need to run `wix extension add` — the DLLs are already present in the export directory.
+
 ## Installing AlliePack
 
 ### Option A: Download the release

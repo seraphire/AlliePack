@@ -527,12 +527,23 @@ The output directory is self-contained:
 
 ```
 dist\installer-src\
-  MyApp.wxs          <- WiX source, all paths relative to this directory
-  build.ps1          <- build script; pass -Version to stamp the MSI
-  WixSharp.CA.dll    <- runtime DLL referenced by the WXS
-  WixUI_en-US.wxl    <- dialog strings (if using standard UI)
-  logo.png           <- any bundled assets
+  MyApp.wxs                    <- WiX source, all paths relative to this directory
+  build.ps1                    <- build script; pass -Version to stamp the MSI
+  WixSharp.CA.dll              <- runtime DLL referenced by the WXS
+  WixToolset.UI.wixext.dll     <- WiX extension DLLs (bundled automatically)
+  WixToolset.Util.wixext.dll
+  WixUI_en-US.wxl              <- dialog strings (if using standard UI)
+  logo.png                     <- any bundled assets
 ```
+
+**WiX extension DLLs** are detected from the generated WXS and bundled automatically. If a required extension is not yet installed in your local wix extension cache (`~/.wix/extensions/`), AlliePack will run `wix extension add` to install it. If that fails (e.g., no network access), install manually and re-run:
+
+```
+wix extension add WixToolset.UI.wix4
+wix extension add WixToolset.Util.wix4
+```
+
+The machine that builds the MSI from the exported artifact does **not** need to install extensions — they are already present in the export directory alongside the WXS.
 
 Build the MSI from the artifact on any machine with `wix.exe`:
 

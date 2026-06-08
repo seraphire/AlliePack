@@ -73,6 +73,38 @@ AlliePack couldn't locate `wix.exe`.
 
 ---
 
+### WiX extension not found
+
+**Symptom:** AlliePack prints a warning and then fails during `--export-wxs`:
+
+```
+Warning: WiX extension not found in cache: WixToolset.UI.wix4
+Running: wix extension add WixToolset.UI.wix4
+```
+
+Followed by a failure like:
+
+```
+WiX extension not found and could not be auto-installed: WixToolset.UI.wix4
+Run the following and then re-run AlliePack:
+  wix extension add WixToolset.UI.wix4
+```
+
+**Cause:** The WiX extension package is not installed in your local extension cache (`%USERPROFILE%\.wix\extensions\`). AlliePack tries to install it automatically via `wix extension add`, but the auto-install failed — usually due to no network access, a proxy, or a NuGet feed issue.
+
+**Fix:** Install the required extension(s) manually and re-run AlliePack:
+
+```
+wix extension add WixToolset.UI.wix4
+wix extension add WixToolset.Util.wix4
+```
+
+See [Installation: WiX extensions](install.md#3-wix-extensions) for the full list of which extensions are required for which features.
+
+> **Note for consumers of exported WXS artifacts:** If you received a WXS package produced by AlliePack, the extension DLLs are already bundled in the export directory alongside the WXS. You do **not** need to install extensions — just run `build.ps1` as provided.
+
+---
+
 ### "Duplicate component GUID" or "Duplicate file"
 
 **Symptom:** WiX compilation fails with a duplicate GUID or duplicate file error.
