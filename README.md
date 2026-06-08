@@ -28,6 +28,12 @@ AlliePack is a YAML-driven MSI installer builder built on **WixSharp** and **WiX
   ```
   dotnet tool install --global wix --version 5.*
   ```
+- WiX extension packages for the features you use. At minimum, the standard UI requires `WixToolset.UI.wix4`:
+  ```
+  wix extension add WixToolset.UI.wix4
+  wix extension add WixToolset.Util.wix4
+  ```
+  When running `--export-wxs`, AlliePack will attempt to install missing extensions automatically. See [Help/install.md](Help/install.md#3-wix-extensions) for the full list.
 
 ## Usage
 
