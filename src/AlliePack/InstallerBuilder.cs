@@ -663,13 +663,28 @@ namespace AlliePack
             var extRefs = new List<string>();
             foreach (var ext in extensions)
             {
+                // Derive the expected local DLL filename:
+                //   "WixToolset.Util.wix4" -> "WixToolset.Util.wixext.dll"
+                string localDllName = ext.Replace(".wix4", ".wixext") + ".dll";
+                string localDllPath = Path.Combine(exportDir, localDllName);
+
+                // If the DLL is already present in the export dir (committed alongside
+                // the WXS, or left by a prior run), reference it directly without
+                // touching the global extension cache.  This is the common case on a
+                // clean checkout where the delivery repo contains pre-bundled DLLs.
+                if (System.IO.File.Exists(localDllPath))
+                {
+                    extRefs.Add(localDllName);
+                    continue;
+                }
+
+                // DLL not present locally -- try the global wix extension cache
+                // (~/.wix/extensions/{name}/{version}/wixext5/{name}.dll).
                 string? dllSrc = FindWixExtensionDll(ext);
                 if (dllSrc != null)
                 {
-                    string dllDest = Path.Combine(exportDir, Path.GetFileName(dllSrc));
-                    if (!System.IO.File.Exists(dllDest))
-                        System.IO.File.Copy(dllSrc, dllDest);
-                    extRefs.Add(Path.GetFileName(dllSrc));   // relative path in build.ps1
+                    System.IO.File.Copy(dllSrc, localDllPath);
+                    extRefs.Add(localDllName);
                 }
                 else
                 {
