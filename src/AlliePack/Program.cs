@@ -62,6 +62,7 @@ namespace AlliePack
                     .WithNamingConvention(CamelCaseNamingConvention.Instance)
                     .WithTypeConverter(new ConditionalStringConverter())
                     .WithTypeConverter(new VersionSourceConverter())
+                    .WithTypeConverter(new UiConfigConverter())
                     .Build();
 
                 var config = deserializer.Deserialize<AlliePackConfig>(yaml);
