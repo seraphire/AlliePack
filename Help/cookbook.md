@@ -529,12 +529,18 @@ The output directory is self-contained:
 dist\installer-src\
   MyApp.wxs                    <- WiX source, all paths relative to this directory
   build.ps1                    <- build script; pass -Version to stamp the MSI
-  WixSharp.CA.dll              <- runtime DLL referenced by the WXS
   WixToolset.UI.wixext.dll     <- WiX extension DLLs (bundled automatically)
   WixToolset.Util.wixext.dll
   WixUI_en-US.wxl              <- dialog strings (if using standard UI)
   logo.png                     <- any bundled assets
 ```
+
+Installers with no managed custom actions — the common case — export **pure WiX**:
+no `WixSharp.CA.dll` is staged or referenced, so the artifact is fully deterministic
+(two exports from identical inputs are byte-identical, which keeps a committed
+export directory clean in git). When the config uses `ui: custom` or defines a
+managed custom action, the WixSharp runtime (`WixSharp.CA.dll`,
+`CustomAction.config`) is staged automatically and referenced by the WXS.
 
 **WiX extension DLLs** are detected from the generated WXS and bundled automatically. If a required extension is not yet installed in your local wix extension cache (`~/.wix/extensions/`), AlliePack will run `wix extension add` to install it. If that fails (e.g., no network access), install manually and re-run:
 

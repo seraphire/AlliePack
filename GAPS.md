@@ -16,8 +16,8 @@ phase is implemented.
 | GAP-5 | Release flags + scope-variant paths (PerUser/PerMachine) | Phase 4 | **Closed** | gms install scope |
 | GAP-6 | Portable WXS export (self-contained, no AlliePack required to compile) | Unphased | **Closed** | gms pack --save-wxs art workflow |
 | GAP-7 | CLI should accept repeated `--define` flags (QOL) | Unphased | **Open** | LeadView _make_package (Solution + DocRoot) |
-| GAP-8 | Exported `WixSharp.CA.dll` is non-deterministic (churns every export) | Unphased | **Open** | LeadView committed pack/ workflow |
-| GAP-9 | Option to omit WixSharp runtime CA for pure-WiX export (no managed CAs) | Unphased | **Open** | LeadView (standard UI, no custom actions) |
+| GAP-8 | Exported `WixSharp.CA.dll` is non-deterministic (churns every export) | Unphased | **Closed** (via GAP-9) | LeadView committed pack/ workflow |
+| GAP-9 | Strip WixSharp runtime CA when unused (default, no managed CAs) -- pure-WiX WXS, smaller MSI | Unphased | **Closed** | LeadView (standard UI, no custom actions) |
 | GAP-10 | Shortcut without `description:` emits empty `Description=""` (WiX0006) | Unphased | **Open** | Drawing06 (description-less shortcuts) |
 
 ---
@@ -241,9 +241,15 @@ AlliePack/WixSharp version actually changes.
 NuGet-provided binary rather than a freshly stamped one), or document the
 discard-on-routine-run guidance. Largely moot for projects that can adopt GAP-9.
 
+**Resolution (2026-06-10):** closed via GAP-9. Installers without managed custom
+actions no longer stage `WixSharp.CA.dll` at all -- two consecutive exports are
+byte-identical (verified by hash comparison). Custom-UI / managed-CA exports
+still stage the non-deterministic DLL; if that combination ever meets a
+committed-artifact workflow in practice, reopen as a narrower gap.
+
 ---
 
-### GAP-9 -- Omit the WixSharp runtime CA for pure-WiX exports
+### GAP-9 -- Strip the WixSharp runtime CA when unused (pure-WiX output)
 
 **Problem:** WixSharp's `Compiler.BuildWxs` unconditionally emits a
 `WixSharp_InitRuntime_Action` custom action backed by `<Binary
@@ -261,12 +267,50 @@ an embedded `WixSharp.CA.dll` and a WixSharp init CA it never exercises. A truly
 WixSharp-free MSI would need none of it.
 
 **Proposed enhancement:** when the resolved project defines no managed custom
-actions, post-process the generated WXS to remove the WixSharp runtime CA, its
-`<Binary>`, the matching `InstallExecuteSequence` entry, and the
-`Software\WixSharp\Used` registry markers -- yielding a pure-WiX WXS with no
-`WixSharp.CA.dll` dependency. Needs validation that nothing else in the WixSharp
-output relies on the init action. Would also resolve GAP-8 for these projects
-(no CA DLL -> no churn).
+actions and does not use `ui: custom`, post-process the generated WXS to remove
+the WixSharp runtime CA, its `<Binary>`, the matching `InstallExecuteSequence`
+entry, and the `Software\WixSharp\Used` registry markers -- yielding a pure-WiX
+WXS with no `WixSharp.CA.dll` dependency. Needs validation that nothing else in
+the WixSharp output relies on the init action. Would also resolve GAP-8 for
+these projects (no CA DLL -> no churn).
+
+**Scope decisions (2026-06-10):**
+- Default behavior, not an opt-in option. Per the progressive-complexity
+  principle, a config that doesn't use managed CAs should get the pure-WiX
+  output automatically -- no new YAML key required.
+- The rule is need-based, not a feature checklist: keep the WixSharp runtime
+  if and only if something in the resolved project actually depends on it.
+  Today that means a managed custom action or `ui: custom` (WixSharp WPF
+  EmbeddedUI, which needs `WixSharp.UI.CA.dll`); if a future feature (e.g. a
+  `customActions:` block) introduces a managed CA, it creates the need and the
+  runtime stays -- the strip logic should detect dependence rather than
+  enumerate features.
+- Detection happens at the artifact level: scan the generated WXS for
+  references to the `WixSharp.CA.dll` `<Binary>`. If the only referent is the
+  init-action scaffolding, strip the binary, the CA, its sequence entry, and
+  the `Software\WixSharp\Used` registry markers; if any other custom action
+  references the binary, keep everything. This is the validation step for
+  which DLLs are actually needed -- self-maintaining, no config-level
+  knowledge required.
+- Applies to both the direct MSI build path and `--export-wxs`. The export
+  directory no longer stages `WixSharp.CA.dll` (eliminating the per-run binary
+  churn of GAP-8), and the built MSI no longer embeds it (smaller installer).
+
+**Resolution (2026-06-10):** implemented as
+`InstallerBuilder.StripWixSharpRuntime`, registered as a `WixSourceGenerated`
+handler on every build path (after the `wix:` fragment handler so injected
+fragments participate in need detection). The strip removes the init
+`CustomAction`, its sequence `Custom` entries (dropping a sequence element left
+empty), the `WixSharp.CA.dll` `<Binary>`, and the `Software\WixSharp\Used`
+registry markers. A marker that served as its component's KeyPath is replaced
+by promoting `KeyPath="yes"` onto the component's first `File`; file-less
+(`CreateFolder`-only) components fall back to the directory keypath by
+omission. Exports also prune the now-orphaned `CustomAction.config`. The
+runtime is kept untouched when any other CA references the runtime binary, any
+other `*.CA.dll` binary exists, or an `EmbeddedUI` element is present.
+Verified: unit tests (`WixSharpRuntimeStripTests`), base-test E2E
+install/extract, exported artifact compiles standalone with `wix.exe`, and two
+consecutive exports are byte-identical.
 
 ---
 

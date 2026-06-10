@@ -541,6 +541,19 @@ namespace AlliePack
                 };
             }
 
+            // GAP-9: emit pure-WiX output when nothing needs the WixSharp managed runtime.
+            // Registered after the fragment handler so injected fragments are seen by the
+            // need detection; the strip is skipped automatically when any managed CA or
+            // the ManagedUI stack is present.
+            bool isVerbose = _options.IsVerbose;
+            project.WixSourceGenerated += doc =>
+            {
+                if (StripWixSharpRuntime(doc))
+                    Console.WriteLine("No managed custom actions detected -- WixSharp runtime CA stripped (pure-WiX output).");
+                else if (isVerbose)
+                    Console.WriteLine("  WixSharp runtime CA retained (managed CA or managed UI present).");
+            };
+
             if (_options.ReportOnly)
             {
                 GenerateReport(project, entities);
@@ -829,6 +842,127 @@ namespace AlliePack
         }
 
         /// <summary>
+        /// Removes the WixSharp managed-runtime scaffolding from the generated WXS when
+        /// nothing in the document actually depends on it (GAP-9), yielding pure-WiX
+        /// output with no <c>WixSharp.CA.dll</c> dependency.  WixSharp's
+        /// <c>Compiler.BuildWxs</c> emits this scaffolding unconditionally; for installers
+        /// with no managed custom actions it is dead weight that bloats the MSI and -- in
+        /// the committed-export workflow -- churns on every run because the DLL is
+        /// non-deterministic (GAP-8).
+        /// <para>
+        /// Detection is need-based at the artifact level, not a feature checklist.  The
+        /// runtime is KEPT (no changes made) when any of the following is present:
+        /// </para>
+        /// <list type="bullet">
+        ///   <item>A <c>CustomAction</c> other than the init action references the
+        ///     <c>WixSharp.CA.dll</c> binary (e.g. the ManagedUI <c>CancelRequestHandler</c>).</item>
+        ///   <item>Any other managed CA assembly (<c>*.CA.dll</c> binary) -- managed custom
+        ///     actions rely on the WixSharp runtime init.</item>
+        ///   <item>An <c>EmbeddedUI</c> element (the <c>ui: custom</c> WPF dialog stack).</item>
+        /// </list>
+        /// <para>
+        /// When stripped, the following are removed: the <c>WixSharp_InitRuntime_Action</c>
+        /// custom action, its sequence <c>Custom</c> entries, the backing <c>Binary</c>,
+        /// and the <c>Software\WixSharp\Used</c> registry markers.  A marker that served
+        /// as its component's KeyPath is replaced by promoting <c>KeyPath="yes"</c> onto
+        /// the component's first <c>File</c>; components with no file (e.g.
+        /// <c>CreateFolder</c>-only) fall back to the directory keypath by omission.
+        /// </para>
+        /// </summary>
+        /// <returns><c>true</c> when the scaffolding was stripped; <c>false</c> when the
+        /// runtime is needed (or absent) and the document was left untouched.</returns>
+        internal static bool StripWixSharpRuntime(XDocument doc)
+        {
+            XNamespace wixNs = "http://wixtoolset.org/schemas/v4/wxs";
+            const string initActionId = "WixSharp_InitRuntime_Action";
+
+            static string? FileNameOf(string? path)
+                => string.IsNullOrEmpty(path) ? null : Path.GetFileName(path);
+
+            var binaries = doc.Descendants(wixNs + "Binary").ToList();
+
+            var runtimeBinaries = binaries
+                .Where(b => string.Equals(FileNameOf(b.Attribute("SourceFile")?.Value),
+                                          "WixSharp.CA.dll", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (!runtimeBinaries.Any())
+                return false;   // nothing to strip (already pure, or unexpected shape)
+
+            var runtimeBinaryIds = runtimeBinaries
+                .Select(b => b.Attribute("Id")?.Value)
+                .Where(id => id != null)
+                .ToHashSet(StringComparer.Ordinal);
+
+            // --- Need detection -------------------------------------------------------
+
+            // 1. Any CA referencing the runtime binary other than the init action itself
+            //    (ManagedUI's CancelRequestHandler, or anything injected via wix fragments).
+            var runtimeCas = doc.Descendants(wixNs + "CustomAction")
+                .Where(ca => runtimeBinaryIds.Contains(ca.Attribute("BinaryRef")?.Value ?? ""))
+                .ToList();
+
+            if (runtimeCas.Any(ca => ca.Attribute("Id")?.Value != initActionId))
+                return false;
+
+            // 2. Any other managed CA assembly -- managed CAs depend on the runtime init.
+            bool otherManagedCa = binaries
+                .Except(runtimeBinaries)
+                .Any(b => (FileNameOf(b.Attribute("SourceFile")?.Value) ?? "")
+                              .EndsWith(".CA.dll", StringComparison.OrdinalIgnoreCase));
+            if (otherManagedCa)
+                return false;
+
+            // 3. Managed UI (ui: custom) -- the WPF dialog stack needs the managed runtime.
+            if (doc.Descendants(wixNs + "EmbeddedUI").Any())
+                return false;
+
+            // --- Strip ----------------------------------------------------------------
+
+            // Sequence entries (InstallExecuteSequence / InstallUISequence) for the init CA.
+            foreach (var custom in doc.Descendants(wixNs + "Custom")
+                         .Where(c => c.Attribute("Action")?.Value == initActionId)
+                         .ToList())
+            {
+                var sequence = custom.Parent;
+                custom.Remove();
+                if (sequence != null && !sequence.HasElements)
+                    sequence.Remove();
+            }
+
+            foreach (var ca in runtimeCas) ca.Remove();
+            foreach (var bin in runtimeBinaries) bin.Remove();
+
+            // "WixSharp was here" registry markers.  WixSharp marks the RegistryValue as
+            // the component KeyPath, so removal must hand the keypath to the component's
+            // file (explicit KeyPath="yes") or, for file-less components, to the directory
+            // (valid by omission for CreateFolder-only components).
+            foreach (var regKey in doc.Descendants(wixNs + "RegistryKey")
+                         .Where(rk => string.Equals(rk.Attribute("Key")?.Value,
+                                                    @"Software\WixSharp\Used",
+                                                    StringComparison.OrdinalIgnoreCase))
+                         .ToList())
+            {
+                var component = regKey.Parent;
+                bool wasKeyPath = regKey.Descendants(wixNs + "RegistryValue")
+                    .Any(rv => rv.Attribute("KeyPath")?.Value == "yes");
+
+                regKey.Remove();
+
+                if (wasKeyPath && component != null)
+                {
+                    bool hasKeyPath = component.Descendants()
+                        .Any(e => e.Attribute("KeyPath")?.Value == "yes");
+                    var firstFile = component.Elements(wixNs + "File").FirstOrDefault();
+                    if (!hasKeyPath && firstFile != null)
+                        firstFile.SetAttributeValue("KeyPath", "yes");
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// Injects <c>Publish</c> elements into the WXS <c>UI</c> block to bypass the
         /// <c>LicenseAgreementDlg</c> in <c>WixUI_FeatureTree</c> when no license file is
         /// configured.  Without this override WiX substitutes a Lorem ipsum placeholder.
@@ -999,6 +1133,15 @@ namespace AlliePack
             {
                 if (!referenced.Contains(Path.GetFileName(dll)))
                     System.IO.File.Delete(dll);
+            }
+
+            // CustomAction.config is the .NET host config WixSharp stages alongside its
+            // CA DLLs.  With no CA DLL left in the artifact it serves no purpose.
+            if (referenced.Count == 0)
+            {
+                string caConfig = Path.Combine(exportDir, "CustomAction.config");
+                if (System.IO.File.Exists(caConfig))
+                    System.IO.File.Delete(caConfig);
             }
         }
 
