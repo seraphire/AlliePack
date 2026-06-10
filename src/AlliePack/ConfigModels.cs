@@ -238,6 +238,72 @@ namespace AlliePack
     }
 
     // -----------------------------------------------------------------------
+    // UiConfig
+    //
+    // The ui: key accepts either a plain scalar shorthand or a mapping block:
+    //
+    //   # Scalar shorthand (type only):
+    //   ui: standard
+    //
+    //   # Block form (type + options):
+    //   ui:
+    //     type: standard
+    //     allowInstallDirChange: false
+    //
+    // Future block keys: dialogs (ordered list of dialog page names).
+    // -----------------------------------------------------------------------
+
+    public class UiConfig
+    {
+        public string Type { get; set; } = "standard";
+
+        [YamlMember(Alias = "allowInstallDirChange")]
+        public bool AllowInstallDirChange { get; set; } = true;
+    }
+
+    public class UiConfigConverter : IYamlTypeConverter
+    {
+        public bool Accepts(Type type) => type == typeof(UiConfig);
+
+        public object ReadYaml(IParser parser, Type type, ObjectDeserializer rootDeserializer)
+        {
+            if (parser.Current is Scalar scalar)
+            {
+                parser.MoveNext();
+                return new UiConfig { Type = scalar.Value };
+            }
+            if (parser.Current is MappingStart)
+            {
+                parser.MoveNext();
+                var config = new UiConfig();
+                while (!(parser.Current is MappingEnd))
+                {
+                    var key = ((Scalar)parser.Current!).Value;
+                    parser.MoveNext();
+                    var val = ((Scalar)parser.Current!).Value;
+                    parser.MoveNext();
+                    switch (key.ToLowerInvariant())
+                    {
+                        case "type":
+                            config.Type = val;
+                            break;
+                        case "allowinstalldirchange":
+                            config.AllowInstallDirChange = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
+                            break;
+                        // future keys (e.g. dialogs) handled here
+                    }
+                }
+                parser.MoveNext(); // consume MappingEnd
+                return config;
+            }
+            throw new InvalidOperationException("Expected scalar or mapping for ui:");
+        }
+
+        public void WriteYaml(IEmitter emitter, object? value, Type type, ObjectSerializer serializer)
+            => throw new NotImplementedException();
+    }
+
+    // -----------------------------------------------------------------------
     // Top-level config
     // -----------------------------------------------------------------------
 
@@ -298,12 +364,11 @@ namespace AlliePack
         public SigningConfig? Signing { get; set; }
 
         /// <summary>
-        /// Installer UI type.
-        /// "standard" (default) -- built-in WiX dialog set; no WixSharp WPF dependency.
-        /// "custom"             -- WixSharp WPF EmbeddedUI (requires WixSharp.UI.CA.dll).
+        /// Installer UI configuration.  Accepts a string shorthand (<c>ui: standard</c>) or a
+        /// block with <c>type:</c> and optional <c>allowInstallDirChange:</c>.
         /// </summary>
         [YamlMember(Alias = "ui")]
-        public string Ui { get; set; } = "standard";
+        public UiConfig Ui { get; set; } = new UiConfig();
 
         [YamlMember(Alias = "features")]
         public List<FeatureConfig> Features { get; set; } = new();

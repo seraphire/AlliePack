@@ -93,6 +93,8 @@ namespace AlliePack
                 Console.WriteLine($"  [debug] product.installScope: {_config.Product.InstallScope.Resolve(_activeFlags)}");
                 Console.WriteLine($"  [debug] product.installDir : {_config.Product.InstallDir?.Resolve(_activeFlags) ?? "(default)"}");
                 Console.WriteLine($"  [debug] product.upgradeCode: {_config.Product.UpgradeCode}");
+                Console.WriteLine($"  [debug] ui.type            : {_config.Ui.Type}");
+                Console.WriteLine($"  [debug] ui.allowInstallDirChange: {_config.Ui.AllowInstallDirChange}");
                 Console.WriteLine($"  [debug] aliases ({_config.Aliases.Count}):");
                 foreach (var a in _config.Aliases)
                     Console.WriteLine($"  [debug]   {a.Key}: -> {_resolver.Resolve(a.Value)}");
@@ -409,9 +411,10 @@ namespace AlliePack
             // ui: standard (default) -- built-in WiX dialog set; wix.exe supplies the dialogs,
             //     no WixSharp WPF assembly (WixSharp.UI.CA.dll) is needed.
             // ui: custom             -- WixSharp WPF EmbeddedUI; full WPF dialog stack.
-            bool hasFeatures = _config.Features.Any();
-            bool hasLicense  = !string.IsNullOrEmpty(_config.Product.LicenseFile);
-            bool useCustomUi = string.Equals(_config.Ui, "custom", StringComparison.OrdinalIgnoreCase);
+            bool hasFeatures           = _config.Features.Any();
+            bool hasLicense            = !string.IsNullOrEmpty(_config.Product.LicenseFile);
+            bool useCustomUi           = string.Equals(_config.Ui.Type, "custom", StringComparison.OrdinalIgnoreCase);
+            bool allowInstallDirChange = _config.Ui.AllowInstallDirChange;
 
             if (hasLicense)
                 project.LicenceFile = _resolver.Resolve(_config.Product.LicenseFile!);
@@ -463,25 +466,41 @@ namespace AlliePack
             else
             {
                 // Standard WiX built-in dialog set -- no WixSharp.UI.CA.dll required.
-                // WixUI_FeatureTree when features exist; WixUI_InstallDir when a license is
-                // present; WixUI_Minimal for the simple service-style case.
+                // allowInstallDirChange elevates the dialog set to one that includes
+                // InstallDirDlg so the end-user can choose the destination folder.
+                //
+                // Matrix:
+                //   features  allowDirChange  UI chosen
+                //   --------  --------------  ---------
+                //   yes       yes             WixUI_Mondo       (dir + features, may need license suppression)
+                //   yes       no              WixUI_FeatureTree (features only)
+                //   no        yes/license     WixUI_InstallDir  (dir only)
+                //   no        no              WixUI_Minimal
                 if (hasFeatures)
-                    project.UI = WUI.WixUI_FeatureTree;
-                else if (hasLicense)
+                    project.UI = allowInstallDirChange ? WUI.WixUI_Mondo : WUI.WixUI_FeatureTree;
+                else if (hasLicense || allowInstallDirChange)
                     project.UI = WUI.WixUI_InstallDir;
                 else
                     project.UI = WUI.WixUI_Minimal;
             }
 
-            // When WixUI_FeatureTree is used without a license file, WiX falls back to a
-            // Lorem ipsum placeholder.  Suppress the LicenseAgreementDlg entirely by
-            // injecting <Publish> elements that override the dialog-flow transitions:
-            //   WelcomeDlg  → Next  =>  CustomizeDlg   (was: LicenseAgreementDlg)
-            //   CustomizeDlg → Back =>  WelcomeDlg     (was: LicenseAgreementDlg)
-            // Order="2" takes priority over the built-in Order="1" transitions shipped
-            // with WixUI_FeatureTree in the WixToolset.UI.wixext extension.
-            if (hasFeatures && !hasLicense && !useCustomUi)
-                project.WixSourceGenerated += SuppressLicenseDialog;
+            // Suppress the LicenseAgreementDlg when no license file is configured,
+            // otherwise WiX substitutes a Lorem ipsum placeholder.
+            // The suppression is dialog-set specific because the predecessor of
+            // LicenseAgreementDlg differs between FeatureTree and Mondo.
+            if (!hasLicense && !useCustomUi)
+            {
+                if (hasFeatures && !allowInstallDirChange)
+                {
+                    // WixUI_FeatureTree: WelcomeDlg -> CustomizeDlg (skip license)
+                    project.WixSourceGenerated += SuppressLicenseDialog;
+                }
+                else if (hasFeatures && allowInstallDirChange)
+                {
+                    // WixUI_Mondo: WelcomeDlg -> InstallDirDlg (skip license, keep dir dialog)
+                    project.WixSourceGenerated += SuppressLicenseDialogMondo;
+                }
+            }
 
             // Raw WiX XML fragments -- escape hatch for anything AlliePack doesn't cover
             if (_config.Wix?.Fragments.Any() == true)
@@ -814,7 +833,7 @@ namespace AlliePack
         ///   WelcomeDlg → CustomizeDlg (forward), CustomizeDlg → WelcomeDlg (back).
         /// </para>
         /// </summary>
-        private static void SuppressLicenseDialog(XDocument doc)
+        internal static void SuppressLicenseDialog(XDocument doc)
         {
             XNamespace wix = "http://wixtoolset.org/schemas/v4/wxs";
 
@@ -843,6 +862,44 @@ namespace AlliePack
             // CustomizeDlg Back -> WelcomeDlg (skip LicenseAgreementDlg on the way back).
             ui.Add(new XElement(wix + "Publish",
                 new XAttribute("Dialog",    "CustomizeDlg"),
+                new XAttribute("Control",   "Back"),
+                new XAttribute("Event",     "NewDialog"),
+                new XAttribute("Value",     "WelcomeDlg"),
+                new XAttribute("Order",     "2"),
+                new XAttribute("Condition", "1")));
+        }
+
+        /// <summary>
+        /// Same as <see cref="SuppressLicenseDialog"/> but for <c>WixUI_Mondo</c>.
+        /// Mondo's flow is: WelcomeDlg -> LicenseAgreementDlg -> InstallDirDlg -> CustomizeDlg.
+        /// This override short-circuits the license dialog while leaving InstallDirDlg in place.
+        /// </summary>
+        internal static void SuppressLicenseDialogMondo(XDocument doc)
+        {
+            XNamespace wix = "http://wixtoolset.org/schemas/v4/wxs";
+
+            var package = doc.Descendants(wix + "Package").FirstOrDefault();
+            if (package == null) return;
+
+            var ui = package.Elements(wix + "UI").FirstOrDefault();
+            if (ui == null)
+            {
+                ui = new XElement(wix + "UI");
+                package.Add(ui);
+            }
+
+            // WelcomeDlg Next -> InstallDirDlg (skip LicenseAgreementDlg).
+            ui.Add(new XElement(wix + "Publish",
+                new XAttribute("Dialog",    "WelcomeDlg"),
+                new XAttribute("Control",   "Next"),
+                new XAttribute("Event",     "NewDialog"),
+                new XAttribute("Value",     "InstallDirDlg"),
+                new XAttribute("Order",     "2"),
+                new XAttribute("Condition", "1")));
+
+            // InstallDirDlg Back -> WelcomeDlg (skip LicenseAgreementDlg on the way back).
+            ui.Add(new XElement(wix + "Publish",
+                new XAttribute("Dialog",    "InstallDirDlg"),
                 new XAttribute("Control",   "Back"),
                 new XAttribute("Event",     "NewDialog"),
                 new XAttribute("Value",     "WelcomeDlg"),

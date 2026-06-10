@@ -109,7 +109,7 @@ wix:            # optional — raw WiX XML escape hatch
 | `description` | string | no | `""` | Control Panel description |
 | `upgradeCode` | GUID string | yes | — | Stable across versions |
 | `installScope` | string or conditional | no | `perMachine` | `perUser` or `perMachine` |
-| `installDir` | string or conditional | no | `[ProgramFilesFolder]\Manufacturer\Name` | Install root path |
+| `installDir` | string or conditional | no | `[ProgramFilesFolder]\Manufacturer\Name` | Install root path (default shown to user) |
 | `platform` | string | no | `x86` | `x86`, `x64`, `arm64` |
 | `licenseFile` | string | no | — | Path to RTF license file |
 
@@ -305,6 +305,35 @@ wix:
     - inline: "<Fragment>...</Fragment>"
     - file: "installer/custom.wxs"
 ```
+
+### 5.11 `ui:`
+
+Controls the installer dialog set. Accepts a string shorthand or a block:
+
+```yaml
+# Shorthand (type only)
+ui: standard
+
+# Block form
+ui:
+  type: standard              # standard (default) or custom
+  allowInstallDirChange: true # show install-directory picker; default true
+```
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `type` | string | `standard` | `standard` -- built-in WiX dialog set (no extra DLL). `custom` -- WixSharp WPF EmbeddedUI (requires `WixSharp.UI.CA.dll`). |
+| `allowInstallDirChange` | bool | `true` | Show an install-directory picker so the end-user can choose the destination folder. Set to `false` for service installers or tools that require a fixed path. |
+
+The dialog set selected also depends on `product.licenseFile` and `features:`:
+
+| `allowInstallDirChange` | `features:` | `licenseFile` | Dialog set |
+|-------------------------|-------------|---------------|------------|
+| `true` | yes | any | `WixUI_Mondo` |
+| `true` | no | — | `WixUI_InstallDir` |
+| `false` | yes | any | `WixUI_FeatureTree` |
+| `false` | no | set | `WixUI_InstallDir` |
+| `false` | no | — | `WixUI_Minimal` |
 
 ---
 
