@@ -335,6 +335,18 @@ The dialog set selected also depends on `product.licenseFile` and `features:`:
 | `false` | no | set | `WixUI_InstallDir` |
 | `false` | no | — | `WixUI_Minimal` |
 
+**License page when no `licenseFile` is set.** WiX substitutes a Lorem ipsum
+placeholder into `LicenseAgreementDlg` when no license is configured. To avoid
+showing it, AlliePack rewrites the dialog flow to skip `LicenseAgreementDlg`:
+
+- `WixUI_FeatureTree` -> `WelcomeDlg` goes straight to `CustomizeDlg`.
+- `WixUI_InstallDir` / `WixUI_Mondo` -> `WelcomeDlg` goes straight to `InstallDirDlg`.
+- `WixUI_Minimal` combines the license into `WelcomeEulaDlg`, so it **cannot** be
+  routed around -- a license-free Minimal installer still shows the placeholder.
+  Supply a `licenseFile`, or set `allowInstallDirChange: true` to move off Minimal.
+
+When a `licenseFile` *is* configured the real license is shown and no rewrite occurs.
+
 ---
 
 ## 6. Path Resolution

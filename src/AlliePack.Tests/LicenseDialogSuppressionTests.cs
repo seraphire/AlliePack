@@ -83,14 +83,15 @@ namespace AlliePack.Tests
         }
 
         // -----------------------------------------------------------------------
-        // SuppressLicenseDialogMondo  (WixUI_Mondo: Welcome -> InstallDir -> Customize)
+        // SuppressLicenseDialogInstallDir  (WixUI_InstallDir / WixUI_Mondo:
+        //                                   Welcome -> InstallDir, skipping license)
         // -----------------------------------------------------------------------
 
         [Fact]
-        public void Mondo_WelcomeDlg_Next_PointsTo_InstallDirDlg()
+        public void InstallDir_WelcomeDlg_Next_PointsTo_InstallDirDlg()
         {
             var doc = MakeDoc();
-            InstallerBuilder.SuppressLicenseDialogMondo(doc);
+            InstallerBuilder.SuppressLicenseDialogInstallDir(doc);
 
             var pub = FindPublish(doc, "WelcomeDlg", "Next");
             Assert.NotNull(pub);
@@ -100,10 +101,10 @@ namespace AlliePack.Tests
         }
 
         [Fact]
-        public void Mondo_InstallDirDlg_Back_PointsTo_WelcomeDlg()
+        public void InstallDir_InstallDirDlg_Back_PointsTo_WelcomeDlg()
         {
             var doc = MakeDoc();
-            InstallerBuilder.SuppressLicenseDialogMondo(doc);
+            InstallerBuilder.SuppressLicenseDialogInstallDir(doc);
 
             var pub = FindPublish(doc, "InstallDirDlg", "Back");
             Assert.NotNull(pub);
@@ -113,20 +114,20 @@ namespace AlliePack.Tests
         }
 
         [Fact]
-        public void Mondo_CreatesUiElement_WhenAbsent()
+        public void InstallDir_CreatesUiElement_WhenAbsent()
         {
             var doc = MakeDoc(withUiElement: false);
-            InstallerBuilder.SuppressLicenseDialogMondo(doc);
+            InstallerBuilder.SuppressLicenseDialogInstallDir(doc);
 
             var ui = doc.Descendants(Wix + "UI").FirstOrDefault();
             Assert.NotNull(ui);
         }
 
         [Fact]
-        public void Mondo_ReusesExistingUiElement()
+        public void InstallDir_ReusesExistingUiElement()
         {
             var doc = MakeDoc(withUiElement: true);
-            InstallerBuilder.SuppressLicenseDialogMondo(doc);
+            InstallerBuilder.SuppressLicenseDialogInstallDir(doc);
 
             Assert.Single(doc.Descendants(Wix + "UI"));
         }
@@ -136,10 +137,10 @@ namespace AlliePack.Tests
         // -----------------------------------------------------------------------
 
         [Fact]
-        public void Mondo_DoesNotTarget_CustomizeDlg()
+        public void InstallDir_DoesNotTarget_CustomizeDlg()
         {
             var doc = MakeDoc();
-            InstallerBuilder.SuppressLicenseDialogMondo(doc);
+            InstallerBuilder.SuppressLicenseDialogInstallDir(doc);
 
             Assert.Null(FindPublish(doc, "CustomizeDlg", "Back"));
             Assert.DoesNotContain(PublishElements(doc),

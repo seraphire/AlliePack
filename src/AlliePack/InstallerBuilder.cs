@@ -487,7 +487,12 @@ namespace AlliePack
             // Suppress the LicenseAgreementDlg when no license file is configured,
             // otherwise WiX substitutes a Lorem ipsum placeholder.
             // The suppression is dialog-set specific because the predecessor of
-            // LicenseAgreementDlg differs between FeatureTree and Mondo.
+            // LicenseAgreementDlg differs between dialog sets.
+            //   FeatureTree (features, no dir change)      -> Welcome -> Customize
+            //   InstallDir / Mondo (any set with InstallDirDlg) -> Welcome -> InstallDir
+            //   Minimal (no features, no dir change)       -> WelcomeEulaDlg combines the
+            //       license into the welcome page; it cannot be routed around, so a
+            //       license-free Minimal installer still shows the placeholder.
             if (!hasLicense && !useCustomUi)
             {
                 if (hasFeatures && !allowInstallDirChange)
@@ -495,10 +500,11 @@ namespace AlliePack
                     // WixUI_FeatureTree: WelcomeDlg -> CustomizeDlg (skip license)
                     project.WixSourceGenerated += SuppressLicenseDialog;
                 }
-                else if (hasFeatures && allowInstallDirChange)
+                else if (allowInstallDirChange)
                 {
-                    // WixUI_Mondo: WelcomeDlg -> InstallDirDlg (skip license, keep dir dialog)
-                    project.WixSourceGenerated += SuppressLicenseDialogMondo;
+                    // WixUI_InstallDir (no features) or WixUI_Mondo (features):
+                    // WelcomeDlg -> InstallDirDlg (skip license, keep dir dialog)
+                    project.WixSourceGenerated += SuppressLicenseDialogInstallDir;
                 }
             }
 
@@ -870,11 +876,12 @@ namespace AlliePack
         }
 
         /// <summary>
-        /// Same as <see cref="SuppressLicenseDialog"/> but for <c>WixUI_Mondo</c>.
-        /// Mondo's flow is: WelcomeDlg -> LicenseAgreementDlg -> InstallDirDlg -> CustomizeDlg.
+        /// Same as <see cref="SuppressLicenseDialog"/> but for any dialog set whose flow is
+        /// <c>WelcomeDlg -> LicenseAgreementDlg -> InstallDirDlg</c> -- i.e. both
+        /// <c>WixUI_InstallDir</c> (no features) and <c>WixUI_Mondo</c> (features).
         /// This override short-circuits the license dialog while leaving InstallDirDlg in place.
         /// </summary>
-        internal static void SuppressLicenseDialogMondo(XDocument doc)
+        internal static void SuppressLicenseDialogInstallDir(XDocument doc)
         {
             XNamespace wix = "http://wixtoolset.org/schemas/v4/wxs";
 
