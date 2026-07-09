@@ -327,20 +327,40 @@ ui:
 
 The dialog set selected also depends on `product.licenseFile` and `features:`:
 
-| `allowInstallDirChange` | `features:` | `licenseFile` | Dialog set |
-|-------------------------|-------------|---------------|------------|
-| `true` | yes | any | `WixUI_Mondo` |
-| `true` | no | — | `WixUI_InstallDir` |
-| `false` | yes | any | `WixUI_FeatureTree` |
-| `false` | no | set | `WixUI_InstallDir` |
-| `false` | no | — | `WixUI_Minimal` |
+| `features:` | `allowInstallDirChange` | `licenseFile` | Dialog set | Install dir chosen via |
+|-------------|-------------------------|---------------|------------|------------------------|
+| yes | `true`  | any | `WixUI_FeatureTree` | Browse button on the feature tree |
+| yes | `false` | any | `WixUI_FeatureTree` | fixed (no Browse button) |
+| no  | `true`  | any | `WixUI_InstallDir`  | dedicated `InstallDirDlg` page |
+| no  | `false` | set | `WixUI_InstallDir`  | dedicated `InstallDirDlg` page |
+| no  | `false` | —   | `WixUI_Minimal`     | fixed |
+
+`WixUI_FeatureTree` handles every installer that declares `features:`, regardless of
+`allowInstallDirChange`. Its `CustomizeDlg` carries both the feature-selection tree and an
+install-location `Browse…` button, so it covers "features + directory" on its own.
+
+> **Why not `WixUI_Mondo`.** Mondo's feature tree is only reachable via its Setup-Type
+> ("Typical / Custom / Complete") page. Routing `WelcomeDlg` straight to `InstallDirDlg` to get a
+> directory picker bypasses Setup-Type entirely, so the feature tree never shows. `WixUI_FeatureTree`
+> avoids the problem because the tree *is* the second page.
+
+**Properties injected automatically.** AlliePack post-processes the generated `.wxs` so the chosen
+dialog set actually works:
+
+- `WixUI_InstallDir` → adds `<Property Id="WIXUI_INSTALLDIR" Value="INSTALLDIR" />`. The
+  `InstallDirDlg` path control binds to this; without it the MSI aborts at launch with **error
+  2819** (full-UI only — silent installs are unaffected).
+- `WixUI_FeatureTree` with `allowInstallDirChange: true` → adds
+  `ConfigurableDirectory="INSTALLDIR"` to each visible `<Feature>`, which enables the `Browse…`
+  button. The hidden root feature (`Complete`) is skipped. With `allowInstallDirChange: false` the
+  attribute is omitted and the location is fixed.
 
 **License page when no `licenseFile` is set.** WiX substitutes a Lorem ipsum
 placeholder into `LicenseAgreementDlg` when no license is configured. To avoid
 showing it, AlliePack rewrites the dialog flow to skip `LicenseAgreementDlg`:
 
 - `WixUI_FeatureTree` -> `WelcomeDlg` goes straight to `CustomizeDlg`.
-- `WixUI_InstallDir` / `WixUI_Mondo` -> `WelcomeDlg` goes straight to `InstallDirDlg`.
+- `WixUI_InstallDir` -> `WelcomeDlg` goes straight to `InstallDirDlg`.
 - `WixUI_Minimal` combines the license into `WelcomeEulaDlg`, so it **cannot** be
   routed around -- a license-free Minimal installer still shows the placeholder.
   Supply a `licenseFile`, or set `allowInstallDirChange: true` to move off Minimal.
