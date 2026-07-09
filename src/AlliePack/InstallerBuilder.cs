@@ -466,18 +466,23 @@ namespace AlliePack
             else
             {
                 // Standard WiX built-in dialog set -- no WixSharp.UI.CA.dll required.
-                // allowInstallDirChange elevates the dialog set to one that includes
-                // InstallDirDlg so the end-user can choose the destination folder.
                 //
                 // Matrix:
-                //   features  allowDirChange  UI chosen
-                //   --------  --------------  ---------
-                //   yes       yes             WixUI_Mondo       (dir + features, may need license suppression)
-                //   yes       no              WixUI_FeatureTree (features only)
-                //   no        yes/license     WixUI_InstallDir  (dir only)
-                //   no        no              WixUI_Minimal
+                //   features  allowDirChange  UI chosen          how the install dir is chosen
+                //   --------  --------------  -----------------  -----------------------------------------
+                //   yes       yes             WixUI_FeatureTree  Browse button on the feature tree
+                //                                                (ConfigurableDirectory -- see below)
+                //   yes       no              WixUI_FeatureTree  fixed (no Browse button)
+                //   no        yes/license     WixUI_InstallDir   dedicated InstallDirDlg page
+                //   no        no              WixUI_Minimal      fixed
+                //
+                // WixUI_FeatureTree's CustomizeDlg carries both the feature-selection tree AND
+                // an install-location Browse button, so it covers the "features + dir change"
+                // case on its own.  (WixUI_Mondo does NOT -- its feature tree is only reachable
+                // via SetupTypeDlg's "Custom" path, and splicing InstallDirDlg into it bypasses
+                // that, hiding feature selection entirely.)
                 if (hasFeatures)
-                    project.UI = allowInstallDirChange ? WUI.WixUI_Mondo : WUI.WixUI_FeatureTree;
+                    project.UI = WUI.WixUI_FeatureTree;
                 else if (hasLicense || allowInstallDirChange)
                     project.UI = WUI.WixUI_InstallDir;
                 else
@@ -488,25 +493,34 @@ namespace AlliePack
             // otherwise WiX substitutes a Lorem ipsum placeholder.
             // The suppression is dialog-set specific because the predecessor of
             // LicenseAgreementDlg differs between dialog sets.
-            //   FeatureTree (features, no dir change)      -> Welcome -> Customize
-            //   InstallDir / Mondo (any set with InstallDirDlg) -> Welcome -> InstallDir
+            //   FeatureTree (any set with features)        -> Welcome -> Customize
+            //   InstallDir  (no features, dir change)      -> Welcome -> InstallDir
             //   Minimal (no features, no dir change)       -> WelcomeEulaDlg combines the
             //       license into the welcome page; it cannot be routed around, so a
             //       license-free Minimal installer still shows the placeholder.
             if (!hasLicense && !useCustomUi)
             {
-                if (hasFeatures && !allowInstallDirChange)
+                if (hasFeatures)
                 {
                     // WixUI_FeatureTree: WelcomeDlg -> CustomizeDlg (skip license)
                     project.WixSourceGenerated += SuppressLicenseDialog;
                 }
                 else if (allowInstallDirChange)
                 {
-                    // WixUI_InstallDir (no features) or WixUI_Mondo (features):
-                    // WelcomeDlg -> InstallDirDlg (skip license, keep dir dialog)
+                    // WixUI_InstallDir (no features): WelcomeDlg -> InstallDirDlg
+                    // (skip license, keep dir dialog)
                     project.WixSourceGenerated += SuppressLicenseDialogInstallDir;
                 }
             }
+
+            // WixUI_FeatureTree has no dedicated install-directory page; the destination
+            // folder is chosen via the Browse button on the feature-selection tree, which
+            // MSI only enables when the selected feature carries ConfigurableDirectory.
+            // Emit it (pointing at INSTALLDIR) whenever the install location is meant to be
+            // user-configurable.  Omitting it keeps the directory fixed -- which is exactly
+            // what allowInstallDirChange:false should do.
+            if (hasFeatures && allowInstallDirChange && !useCustomUi)
+                project.WixSourceGenerated += MakeFeaturesConfigurable;
 
             // Raw WiX XML fragments -- escape hatch for anything AlliePack doesn't cover
             if (_config.Wix?.Fragments.Any() == true)
@@ -1010,6 +1024,66 @@ namespace AlliePack
                 new XAttribute("Value",     "WelcomeDlg"),
                 new XAttribute("Order",     "2"),
                 new XAttribute("Condition", "1")));
+
+            // InstallDirDlg's PathEdit control binds to WIXUI_INSTALLDIR.  WixSharp only
+            // emits that property for its native WixUI_InstallDir set, not for WixUI_Mondo
+            // into which this reroute splices InstallDirDlg -- without it MSI raises error
+            // 2819 the moment the dialog renders in full-UI mode.
+            EnsureInstallDirProperty(doc);
+        }
+
+        /// <summary>
+        /// Ensures the <c>WIXUI_INSTALLDIR</c> property is defined so that
+        /// <c>InstallDirDlg</c>'s <c>PathEdit</c> control has a backing property.
+        /// Without it MSI raises error 2819 ("Control [3] on dialog [2] needs a property
+        /// linked to it") when the dialog renders in full UI; silent installs are
+        /// unaffected because the dialog is never shown.  The value <c>INSTALLDIR</c>
+        /// matches WixSharp's <c>Compiler.AutoGeneration.InstallDirDefaultId</c>.
+        /// Idempotent: does nothing if the property already exists (e.g. WixSharp emits
+        /// it for the native <c>WixUI_InstallDir</c> set).
+        /// </summary>
+        internal static void EnsureInstallDirProperty(XDocument doc)
+        {
+            XNamespace wix = "http://wixtoolset.org/schemas/v4/wxs";
+
+            var package = doc.Descendants(wix + "Package").FirstOrDefault();
+            if (package == null) return;
+
+            bool exists = doc.Descendants(wix + "Property")
+                .Any(p => p.Attribute("Id")?.Value == "WIXUI_INSTALLDIR");
+            if (exists) return;
+
+            package.Add(new XElement(wix + "Property",
+                new XAttribute("Id",    "WIXUI_INSTALLDIR"),
+                new XAttribute("Value", "INSTALLDIR")));
+        }
+
+        /// <summary>
+        /// Adds <c>ConfigurableDirectory="INSTALLDIR"</c> to every visible feature so that
+        /// <c>WixUI_FeatureTree</c>'s <c>CustomizeDlg</c> shows an enabled <c>Browse…</c> button,
+        /// letting the user retarget the install location.  Without it the button is greyed out
+        /// and the directory is fixed.  <c>INSTALLDIR</c> matches WixSharp's
+        /// <c>Compiler.AutoGeneration.InstallDirDefaultId</c> and is an uppercase public property,
+        /// as <c>ConfigurableDirectory</c> requires.
+        /// <para>
+        /// WixSharp's hidden root feature (<c>"Complete"</c>) and any other <c>Display="hidden"</c>
+        /// feature are skipped: a hidden feature never appears in the tree, so a Browse button on
+        /// it would be unreachable.  Idempotent per feature -- an existing ConfigurableDirectory is
+        /// left untouched.
+        /// </para>
+        /// </summary>
+        internal static void MakeFeaturesConfigurable(XDocument doc)
+        {
+            XNamespace wix = "http://wixtoolset.org/schemas/v4/wxs";
+
+            foreach (var feature in doc.Descendants(wix + "Feature"))
+            {
+                if (feature.Attribute("Id")?.Value == "Complete") continue;
+                if (feature.Attribute("Display")?.Value == "hidden") continue;
+                if (feature.Attribute("ConfigurableDirectory") != null) continue;
+
+                feature.SetAttributeValue("ConfigurableDirectory", "INSTALLDIR");
+            }
         }
 
         /// <summary>
@@ -1314,12 +1388,34 @@ namespace AlliePack
             string extBuildFlags = extensions.Count > 0
                 ? " " + string.Join(" ", extensions.Select(p => $"-ext {p}"))
                 : "";
+
+            // Always detect the toolset version and, on WiX 7+, accept the OSMF EULA.
+            // wix build AND wix extension add are both blocked until acceptance
+            // (error WIX7015); WiX v5/v6 neither require nor support it, so guard on
+            // the major version.  This lives in build.ps1 -- deliberately NOT in the
+            // WXS -- so the acceptance is an explicit, visible step for whoever runs
+            // the build.
+            string prepBlock = $@"
+# Detect the installed toolset version.  'wix --version' prints e.g.
+# '7.0.0+<commit>'; take the semver before the '+'.
+$wixVer   = ((wix --version) -split '\+', 2)[0].Trim()
+$wixMajor = [int]($wixVer -split '\.')[0]
+
+# WiX v7+ blocks every command until the OSMF Maintenance Fee EULA is accepted.
+if ($wixMajor -ge 7) {{
+    Write-Host ""Accepting WiX OSMF EULA: wix$wixMajor""
+    wix eula accept ""wix$wixMajor""
+    if ($LASTEXITCODE -ne 0) {{
+        Write-Host ""wix eula accept failed (exit $LASTEXITCODE)""
+        exit $LASTEXITCODE
+    }}
+}}
+";
+
             string extAddBlock = extensions.Count > 0
                 ? $@"
-# Resolve extensions against the installed toolset version.  'wix --version'
-# prints e.g. '7.0.0+<commit>'; take the semver before the '+' so the extension
-# version always matches the wix.exe actually running this build.
-$wixVer = ((wix --version) -split '\+', 2)[0].Trim()
+# Resolve extensions against the installed toolset version.  WiX refuses to load
+# version-mismatched extensions, so add each at the toolset version.
 $extensions = @({extArrayItems})
 foreach ($ext in $extensions) {{
     Write-Host ""Adding extension: $ext/$wixVer""
@@ -1358,7 +1454,7 @@ if (-not (Get-Command wix.exe -ErrorAction SilentlyContinue)) {{
 }}
 
 if (-not $OutputPath) {{ $OutputPath = $scriptDir }}
-{extAddBlock}
+{prepBlock}{extAddBlock}
 $msiName = '{safeName}-' + $Version + '.msi'
 $msiPath = Join-Path $OutputPath $msiName
 

@@ -40,7 +40,8 @@ wix:              # optional
 | `installDir` | string or conditional | no | `[ProgramFilesFolder]\Manufacturer\Name` | Root install directory |
 | `platform` | string | no | `x86` | `x86`, `x64`, or `arm64` |
 | `licenseFile` | string | no | — | Path to an `.rtf` file. Adds a license agreement dialog to the installer UI. |
-| `ui` | string | no | `standard` | Installer dialog set: `standard` (built-in WiX dialogs) or `custom` (WixSharp WPF EmbeddedUI). See [Installer UI](#installer-ui). |
+
+> `ui:` is a **top-level** key, not a `product:` field — see [Installer UI](#installer-ui).
 
 ### Version sourcing
 
@@ -65,18 +66,63 @@ version:
 
 ### Installer UI
 
-The `ui:` field selects the installer dialog set.
+`ui:` is a **top-level** key (a sibling of `product:`, not a field inside it). It selects the
+installer's dialog set and, in block form, whether the user may change the install location.
 
-| Value | Behavior |
-|---|---|
-| `standard` (default) | Uses WiX's built-in managed dialog set. AlliePack automatically picks the right variant: `WixUI_FeatureTree` when `features:` are declared, `WixUI_InstallDir` when a `licenseFile:` is set, or `WixUI_Minimal` for a simple service-style install. No additional DLLs are required in the export artifact beyond the WixSharp runtime. |
-| `custom` | Uses WixSharp's WPF EmbeddedUI. Provides a fully customizable WPF-based dialog stack. Requires `WixSharp.UI.CA.dll` in the export artifact. |
+**Scalar form** — just the dialog set:
 
 ```yaml
-product:
-  name: "My App"
-  ui: standard    # omit to get the same result
+ui: standard      # or: custom   (omit entirely for the default, standard)
 ```
+
+**Block form** — dialog set plus options:
+
+```yaml
+ui:
+  type: standard
+  allowInstallDirChange: true   # default true; false locks the install location
+```
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `type` | `standard` \| `custom` | `standard` | `standard` uses WiX's built-in dialog set (no extra DLLs). `custom` uses WixSharp's WPF EmbeddedUI (requires `WixSharp.UI.CA.dll` in the artifact). |
+| `allowInstallDirChange` | bool | `true` | Whether the user can choose the install directory. Ignored by `custom`, which always includes its own directory dialog. |
+
+#### Which pages are shown (`type: standard`)
+
+For the standard dialog set, AlliePack selects the WiX `WixUI_*` variant from three inputs — whether
+`features:` are declared, whether `allowInstallDirChange` is true, and whether a `licenseFile:` is
+set — and injects the supporting properties automatically:
+
+| `features:` | `allowInstallDirChange` | `licenseFile:` | Dialog set | Wizard pages (in order) |
+|---|---|---|---|---|
+| yes | true  | any | `WixUI_FeatureTree` | Welcome → **Custom Setup** (feature tree + **Browse…** to change location) → Ready to Install → Installing → Completed |
+| yes | false | any | `WixUI_FeatureTree` | Welcome → **Custom Setup** (feature tree; location fixed) → Ready to Install → Installing → Completed |
+| no  | true  | any | `WixUI_InstallDir`  | Welcome → **Destination Folder** → Ready to Install → Installing → Completed |
+| no  | false | yes | `WixUI_InstallDir`  | Welcome → **Destination Folder** → Ready to Install → Installing → Completed |
+| no  | false | no  | `WixUI_Minimal`     | Welcome (combined) → Installing → Completed |
+
+When a `licenseFile:` is set, a **License Agreement** page is inserted right after Welcome in every
+set except Minimal. With no `licenseFile:`, AlliePack routes around the license page so WiX does not
+substitute its Lorem-ipsum placeholder.
+
+> **Note — the feature tree does both jobs.** `WixUI_FeatureTree`'s Custom Setup page carries the
+> feature checkboxes *and* the install-location Browse button, so it covers "choose features + choose
+> location" on its own. AlliePack deliberately does **not** use `WixUI_Mondo` here: Mondo only reaches
+> its feature tree through a Setup-Type ("Typical / Custom / Complete") page, and routing straight to a
+> directory page bypasses it — hiding feature selection entirely.
+
+#### Properties AlliePack injects for you
+
+These are added to the generated `.wxs` automatically; you do not author them:
+
+| Property / attribute | Emitted when | Why |
+|---|---|---|
+| `WIXUI_INSTALLDIR = INSTALLDIR` (property) | any set with a Destination Folder page (`WixUI_InstallDir`) | The `InstallDirDlg` path control binds to this property. Missing it aborts the UI at launch with **MSI error 2819**. |
+| `ConfigurableDirectory="INSTALLDIR"` on each visible `<Feature>` | `features:` **and** `allowInstallDirChange: true` | Enables the **Browse…** button on the feature tree. Without it the button is greyed out and the location is fixed. |
+
+See [Troubleshooting → Installer UI problems](troubleshooting.md#installer-ui-problems) if a built
+installer aborts with error 2819 or omits the feature-selection page.
 
 ---
 

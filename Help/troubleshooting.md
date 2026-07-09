@@ -129,6 +129,50 @@ For complex WiX issues, the [WiX documentation](https://wixtoolset.org/docs/) an
 
 ---
 
+## Installer UI problems
+
+These are runtime problems with the built MSI's wizard, not build failures. See
+[Installer UI](schema-reference.md#installer-ui) for the full page matrix.
+
+### Error 2819 ("Control ... needs a property linked to it") on launch
+
+The installer opens, then immediately aborts with:
+
+```
+The installer has encountered an unexpected error installing this package.
+... The error code is 2819.
+```
+
+**Cause.** A dialog that shows a Destination Folder page (`WixUI_InstallDir`) has an
+`InstallDirDlg` whose path control is bound to the `WIXUI_INSTALLDIR` property — but that
+property isn't defined. The MSI UI engine can't render the control and aborts. Because this
+only happens while drawing the dialog, a **silent install (`/qn`, `/qb`) succeeds** while a
+double-click / full-UI install fails — a classic tell.
+
+**Fix.** AlliePack now injects `WIXUI_INSTALLDIR = INSTALLDIR` automatically whenever it emits a
+directory page, so a freshly generated installer won't hit this. If you see it, you're running an
+MSI built before that fix (rebuild and regenerate) or you hand-authored the UI via `wix:` — in
+which case add:
+
+```xml
+<Property Id="WIXUI_INSTALLDIR" Value="INSTALLDIR" />
+```
+
+### Feature-selection page doesn't appear, or the Browse button is greyed out
+
+**No feature page at all.** This came from using `WixUI_Mondo` and routing `WelcomeDlg` straight
+to the directory page, which skips Mondo's Setup-Type step — the only way into its feature tree.
+AlliePack now uses `WixUI_FeatureTree` for any installer with `features:`, whose Custom Setup page
+always shows the tree. Rebuild and regenerate if an older MSI omits it.
+
+**Feature page shows, but Browse… is disabled.** The **Browse…** button only lights up when the
+selected `<Feature>` carries `ConfigurableDirectory`. AlliePack emits it automatically when
+`features:` are present **and** `allowInstallDirChange: true`. If the button is greyed out, either
+`allowInstallDirChange` is `false` (by design — the location is meant to be fixed) or the MSI
+predates the fix.
+
+---
+
 ## Signing problems
 
 ### "signtool.exe not found"
