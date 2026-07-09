@@ -689,72 +689,36 @@ namespace AlliePack
             // aren't referenced so the export artifact only contains what the build needs.
             PruneUnreferencedCaDlls(wxsPath, exportDir);
 
-            // Detect which WiX extensions are required by scanning the generated WXS for
-            // non-core namespaces.  Find each extension DLL on disk and copy it into the
-            // export directory so the artifact is self-contained; the build.ps1 will
-            // reference the local copy by path rather than by package name.
+            // Detect which WiX extensions the generated WXS requires by scanning it for
+            // non-core namespaces.  We deliberately do NOT resolve, bundle, or validate the
+            // extension DLLs here: the emitted build.ps1 adds them at the CLIENT's installed
+            // WiX version at build time (see WriteBuildScript), which keeps this artifact
+            // independent of the WiX version AlliePack itself runs -- an AlliePack on v5 can
+            // target a client build on v7.  Bundling v5 DLLs here would only ship binaries a
+            // newer toolset rejects.
             var extensions = DetectWixExtensions(wxsPath);
 
-            // Resolve and bundle extension DLLs.
-            // Find wix.exe now so we can auto-install any extension that isn't cached yet.
-            string? wixExe = FindWixExe();
+            // The MSI package architecture (Template summary) is set ONLY by the wix
+            // build -arch switch in WiX v4+; there is no Package/@Platform attribute.
+            // Derive it from the product platform so the emitted package bitness matches
+            // the ProgramFiles(64)Folder root and component Bitness already in the WXS.
+            string wixArch = _config.Product.Platform.Equals("x64", StringComparison.OrdinalIgnoreCase) ? "x64"
+                : _config.Product.Platform.Equals("arm64", StringComparison.OrdinalIgnoreCase) ? "arm64"
+                : "x86";
 
-            var extRefs = new List<string>();
-            foreach (var ext in extensions)
-            {
-                // Derive the expected local DLL filename:
-                //   "WixToolset.Util.wix4" -> "WixToolset.Util.wixext.dll"
-                string localDllName = ext.Replace(".wix4", ".wixext") + ".dll";
-                string localDllPath = Path.Combine(exportDir, localDllName);
-
-                // 1. DLL already present in export dir (committed alongside the WXS or
-                //    left by a prior run) -- reference it directly, no cache lookup needed.
-                if (System.IO.File.Exists(localDllPath))
-                {
-                    extRefs.Add(localDllName);
-                    continue;
-                }
-
-                // 2. Try the global wix extension cache
-                //    (~/.wix/extensions/{name}/{version}/wixext5/{name}.dll).
-                string? dllSrc = FindWixExtensionDll(ext);
-
-                // 3. Not cached -- attempt auto-install via 'wix extension add'.
-                if (dllSrc == null && wixExe != null)
-                {
-                    Console.WriteLine($"  Warning: WiX extension not found in cache: {ext}");
-                    Console.WriteLine($"  Running: wix extension add {ext}");
-                    if (TryAddWixExtension(wixExe, ext))
-                        dllSrc = FindWixExtensionDll(ext);
-                }
-
-                if (dllSrc != null)
-                {
-                    System.IO.File.Copy(dllSrc, localDllPath);
-                    extRefs.Add(localDllName);
-                }
-                else
-                {
-                    // Hard fail -- a raw package name is not a valid -ext argument for
-                    // wix.exe.  Instruct the user exactly what to run before retrying.
-                    string installInstr = wixExe != null
-                        ? $"wix extension add {ext}"
-                        : $"dotnet tool install --global wix --version 5.*\n  wix extension add {ext}";
-                    throw new InvalidOperationException(
-                        $"WiX extension not found and could not be auto-installed: {ext}\n" +
-                        $"Run the following and then re-run AlliePack:\n" +
-                        $"  {installInstr}");
-                }
-            }
-
-            // Emit build.ps1 with the bundled extension paths
-            WriteBuildScript(exportDir, safeName, extRefs);
+            // Emit build.ps1.  Pass the extension PACKAGE IDS (not the bundled DLL file
+            // names): the generated script resolves them against the CLIENT's installed
+            // WiX version at build time, so an AlliePack running WiX v5 can still emit an
+            // artifact the client compiles with WiX v7 -- the two versions never have to
+            // match here.  (The .wix4 token is AlliePack-internal; the NuGet id is .wixext.)
+            var extPackageIds = extensions.Select(e => e.Replace(".wix4", ".wixext")).ToList();
+            WriteBuildScript(exportDir, safeName, extPackageIds, wixArch);
 
             // Build the example wix command for the summary
-            string extArgsSummary = extRefs.Count > 0
-                ? " " + string.Join(" ", extRefs.Select(e => $"-ext {e}"))
+            string extArgsSummary = extPackageIds.Count > 0
+                ? " " + string.Join(" ", extPackageIds.Select(e => $"-ext {e}"))
                 : "";
-            string exampleCmd = $"wix build {safeName}.wxs -d Version=1.0.0.0{extArgsSummary} -o {safeName}-1.0.0.0.msi";
+            string exampleCmd = $"wix build {safeName}.wxs -arch {wixArch} -d Version=1.0.0.0{extArgsSummary} -o {safeName}-1.0.0.0.msi";
 
             // Summary
             Console.WriteLine();
@@ -1333,25 +1297,40 @@ namespace AlliePack
         /// to an MSI using wix.exe.  The script must be run from (or will Push-Location to)
         /// the export directory so the relative source paths in the WXS resolve correctly.
         /// </summary>
-        private static void WriteBuildScript(string exportDir, string safeName, List<string> extensions)
+        private static void WriteBuildScript(string exportDir, string safeName, List<string> extensions, string arch)
         {
             // Rules (global CLAUDE.md): set UTF-8 mode for any script that outputs text.
             // IMPORTANT: param() must be the very first statement in a PowerShell script.
             // Use {{ / }} to escape braces inside a C# interpolated verbatim string.
 
-            // Build the -ext flags string.  Extension DLLs bundled alongside the WXS are
-            // referenced via Join-Path $scriptDir so they resolve regardless of CWD.
+            // Extensions are resolved at BUILD time against whatever WiX toolset the
+            // CLIENT has installed -- not shipped as version-locked DLLs.  WiX refuses to
+            // load an extension whose version differs from the toolset, so the script reads
+            // `wix --version` and adds each extension at that exact version to the global
+            // cache, then references it by package id.  This decouples the artifact from
+            // AlliePack's own WiX version (v5 here) so the client can build with v7.
             // -sw1044: suppress ambiguous short name; -sw5437: suppress legacy directory advisory.
-            string extLines = extensions.Count > 0
-                ? string.Join(Environment.NewLine,
-                      extensions.Select(e => e.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
-                          ? $"$extArgs += @('-ext', (Join-Path $scriptDir '{e}'))"
-                          : $"$extArgs += @('-ext', '{e}')"))
-                : string.Empty;
-            string extArgsInit = extensions.Count > 0
-                ? "$extArgs = @()" + Environment.NewLine + extLines + Environment.NewLine
-                : string.Empty;
-            string extSplat = extensions.Count > 0 ? " @extArgs" : "";
+            string extArrayItems = string.Join(", ", extensions.Select(p => $"'{p}'"));
+            string extBuildFlags = extensions.Count > 0
+                ? " " + string.Join(" ", extensions.Select(p => $"-ext {p}"))
+                : "";
+            string extAddBlock = extensions.Count > 0
+                ? $@"
+# Resolve extensions against the installed toolset version.  'wix --version'
+# prints e.g. '7.0.0+<commit>'; take the semver before the '+' so the extension
+# version always matches the wix.exe actually running this build.
+$wixVer = ((wix --version) -split '\+', 2)[0].Trim()
+$extensions = @({extArrayItems})
+foreach ($ext in $extensions) {{
+    Write-Host ""Adding extension: $ext/$wixVer""
+    wix extension add -g ""$ext/$wixVer""
+    if ($LASTEXITCODE -ne 0) {{
+        Write-Host ""wix extension add failed for $ext/$wixVer (exit $LASTEXITCODE)""
+        exit $LASTEXITCODE
+    }}
+}}
+"
+                : "";
 
             string script =
 $@"# ------------------------------------------------------------------------------
@@ -1374,13 +1353,13 @@ $wxsFile   = Join-Path $scriptDir '{safeName}.wxs'
 
 if (-not (Get-Command wix.exe -ErrorAction SilentlyContinue)) {{
     Write-Host 'wix.exe not found on PATH.'
-    Write-Host 'Install WiX v5: dotnet tool install --global wix --version 5.*'
+    Write-Host 'Install WiX: dotnet tool install --global wix'
     exit 1
 }}
 
 if (-not $OutputPath) {{ $OutputPath = $scriptDir }}
-
-{extArgsInit}$msiName = '{safeName}-' + $Version + '.msi'
+{extAddBlock}
+$msiName = '{safeName}-' + $Version + '.msi'
 $msiPath = Join-Path $OutputPath $msiName
 
 Write-Host ""Building: $msiPath""
@@ -1388,7 +1367,7 @@ Write-Host ""Building: $msiPath""
 # Source paths in the WXS are relative to the export directory -- run wix from there.
 Push-Location $scriptDir
 try {{
-    wix build $wxsFile -d Version=$Version{extSplat} -sw1044 -sw5437 -o $msiPath
+    wix build $wxsFile -arch {arch} -d Version=$Version{extBuildFlags} -sw1044 -sw5437 -o $msiPath
     if ($LASTEXITCODE -ne 0) {{
         Write-Host ""wix build failed (exit $LASTEXITCODE)""
         exit $LASTEXITCODE
