@@ -405,7 +405,34 @@ namespace AlliePack
             // Suppress "Ambiguous short name" warning as we are explicitly generating them
             // -sw1044: suppress "Ambiguous short name" (AlliePack generates explicit short names)
             // -sw5437: suppress "no longer necessary to define standard directory" (WiX 6 advisory, WixSharp emits these)
-            project.WixOptions = "-sw1044 -sw5437";
+            string wixOptions = "-sw1044 -sw5437";
+
+            // OSMF EULA acceptance is OPT-IN via the AcceptEula variable and never baked
+            // into the WXS (WiX has no WXS-level acceptance anyway).  In msi mode we route
+            // it to this build's wix.exe via -acceptEula; wxs mode emits it into build.ps1
+            // (see WriteBuildScript).  When it is unset on a toolset that enforces it
+            // (WiX 7+ -- v6 introduced the OSMF fee but does not block builds, and the
+            // 'wix eula accept' command only exists on v7) we WARN but never auto-accept:
+            // accepting a EULA must be explicit.
+            string? acceptEula = ResolveAcceptEula();
+            int? localWixMajor = GetLocalWixMajor();
+            if (acceptEula == null)
+            {
+                if (localWixMajor is int m && m >= 7)
+                    Console.WriteLine(
+                        $"Warning: WiX v{m} requires OSMF EULA acceptance (WIX7015), but AcceptEula " +
+                        $"is not set -- the generated build will not accept it.  Set it explicitly, e.g. " +
+                        $"--define AcceptEula=wix{m}  (or  variables:\\n  AcceptEula: wix{m}  in the yaml).");
+            }
+            else if (localWixMajor is int mm && mm >= 7)
+            {
+                string id = acceptEula.Equals("auto", StringComparison.OrdinalIgnoreCase)
+                    ? $"wix{mm}"
+                    : acceptEula;
+                wixOptions += $" -acceptEula {id}";
+            }
+
+            project.WixOptions = wixOptions;
 
             // Configure installer UI.
             // ui: standard (default) -- built-in WiX dialog set; wix.exe supplies the dialogs,
@@ -726,7 +753,7 @@ namespace AlliePack
             // artifact the client compiles with WiX v7 -- the two versions never have to
             // match here.  (The .wix4 token is AlliePack-internal; the NuGet id is .wixext.)
             var extPackageIds = extensions.Select(e => e.Replace(".wix4", ".wixext")).ToList();
-            WriteBuildScript(exportDir, safeName, extPackageIds, wixArch);
+            WriteBuildScript(exportDir, safeName, extPackageIds, wixArch, ResolveAcceptEula());
 
             // Build the example wix command for the summary
             string extArgsSummary = extPackageIds.Count > 0
@@ -1371,7 +1398,49 @@ namespace AlliePack
         /// to an MSI using wix.exe.  The script must be run from (or will Push-Location to)
         /// the export directory so the relative source paths in the WXS resolve correctly.
         /// </summary>
-        private static void WriteBuildScript(string exportDir, string safeName, List<string> extensions, string arch)
+        /// <summary>
+        /// The opt-in OSMF EULA acceptance value, from the AcceptEula variable (yaml
+        /// variables: or --define).  Returns null when unset -- in which case nothing
+        /// is propagated.  "auto" means "accept whatever major the toolset reports";
+        /// any other value is a literal EULA id (e.g. wix7).
+        /// </summary>
+        private string? ResolveAcceptEula()
+        {
+            return _resolver.Tokens.TryGetValue("AcceptEula", out var v) && !string.IsNullOrWhiteSpace(v)
+                ? v.Trim()
+                : null;
+        }
+
+        /// <summary>
+        /// Best-effort major version of the local wix.exe (used to warn about missing
+        /// EULA acceptance and to decide msi-mode -acceptEula).  Null if wix is not found
+        /// or the version cannot be parsed.
+        /// </summary>
+        private static int? GetLocalWixMajor()
+        {
+            try
+            {
+                string? wixExe = FindWixExe();
+                if (wixExe == null) return null;
+                var psi = new System.Diagnostics.ProcessStartInfo(wixExe, "--version")
+                {
+                    UseShellExecute        = false,
+                    CreateNoWindow         = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError  = true
+                };
+                using var p = System.Diagnostics.Process.Start(psi);
+                if (p == null) return null;
+                string outp = p.StandardOutput.ReadToEnd().Trim();
+                p.WaitForExit();
+                string sem = outp.Split('+')[0].Trim();
+                string major = sem.Split('.').FirstOrDefault() ?? "";
+                return int.TryParse(major, out var m) ? m : (int?)null;
+            }
+            catch { return null; }
+        }
+
+        private static void WriteBuildScript(string exportDir, string safeName, List<string> extensions, string arch, string? eulaId)
         {
             // Rules (global CLAUDE.md): set UTF-8 mode for any script that outputs text.
             // IMPORTANT: param() must be the very first statement in a PowerShell script.
@@ -1389,28 +1458,44 @@ namespace AlliePack
                 ? " " + string.Join(" ", extensions.Select(p => $"-ext {p}"))
                 : "";
 
-            // Always detect the toolset version and, on WiX 7+, accept the OSMF EULA.
-            // wix build AND wix extension add are both blocked until acceptance
-            // (error WIX7015); WiX v5/v6 neither require nor support it, so guard on
-            // the major version.  This lives in build.ps1 -- deliberately NOT in the
-            // WXS -- so the acceptance is an explicit, visible step for whoever runs
-            // the build.
-            string prepBlock = $@"
+            // Version detection is always emitted when the script needs it (extension
+            // resolution and/or EULA acceptance).  'wix --version' is exempt from the
+            // EULA gate, so it works even before acceptance.
+            bool needsPrep = extensions.Count > 0 || !string.IsNullOrEmpty(eulaId);
+            string prepBlock = needsPrep
+                ? $@"
 # Detect the installed toolset version.  'wix --version' prints e.g.
 # '7.0.0+<commit>'; take the semver before the '+'.
 $wixVer   = ((wix --version) -split '\+', 2)[0].Trim()
 $wixMajor = [int]($wixVer -split '\.')[0]
+"
+                : "";
 
-# WiX v7+ blocks every command until the OSMF Maintenance Fee EULA is accepted.
+            // OSMF EULA acceptance -- emitted ONLY when the caller opted in via the
+            // AcceptEula variable.  Guarded on the major version because the 'eula'
+            // subcommand exists only on WiX 7+, so the script stays safe on v5/v6.
+            // Never in the WXS: acceptance is a visible, explicit step in build.ps1.
+            string eulaBlock = "";
+            if (!string.IsNullOrEmpty(eulaId))
+            {
+                // "auto" accepts whatever major the client's toolset reports; any other
+                // value is treated as the literal EULA id (e.g. wix7).
+                string idExpr = eulaId!.Equals("auto", StringComparison.OrdinalIgnoreCase)
+                    ? "wix$wixMajor"
+                    : eulaId!;
+                eulaBlock = $@"
+# WiX v7+ blocks every command until the OSMF Maintenance Fee EULA is accepted
+# (WIX7015).  Emitted because AcceptEula was set when this artifact was exported.
 if ($wixMajor -ge 7) {{
-    Write-Host ""Accepting WiX OSMF EULA: wix$wixMajor""
-    wix eula accept ""wix$wixMajor""
+    Write-Host ""Accepting WiX OSMF EULA: {idExpr}""
+    wix eula accept ""{idExpr}""
     if ($LASTEXITCODE -ne 0) {{
         Write-Host ""wix eula accept failed (exit $LASTEXITCODE)""
         exit $LASTEXITCODE
     }}
 }}
 ";
+            }
 
             string extAddBlock = extensions.Count > 0
                 ? $@"
@@ -1454,7 +1539,7 @@ if (-not (Get-Command wix.exe -ErrorAction SilentlyContinue)) {{
 }}
 
 if (-not $OutputPath) {{ $OutputPath = $scriptDir }}
-{prepBlock}{extAddBlock}
+{prepBlock}{eulaBlock}{extAddBlock}
 $msiName = '{safeName}-' + $Version + '.msi'
 $msiPath = Join-Path $OutputPath $msiName
 

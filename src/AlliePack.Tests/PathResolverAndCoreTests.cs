@@ -59,6 +59,30 @@ namespace AlliePack.Tests
 
         [Fact] public void EmptyString_ReturnsEmpty()
             => Assert.Equal(string.Empty, Make().Substitute(string.Empty));
+
+        // TryGetValue -- single-token lookup used by opt-in settings (e.g. AcceptEula)
+
+        [Fact] public void TryGetValue_DefinedToken_ReturnsTrueAndValue()
+        {
+            var sub = Make(tokens: new Dictionary<string, string> { ["AcceptEula"] = "wix7" });
+            Assert.True(sub.TryGetValue("AcceptEula", out var v));
+            Assert.Equal("wix7", v);
+        }
+
+        [Fact] public void TryGetValue_UndefinedToken_ReturnsFalseAndEmpty()
+        {
+            Assert.False(Make().TryGetValue("AcceptEula", out var v));
+            Assert.Equal(string.Empty, v);
+        }
+
+        [Fact] public void TryGetValue_AppliesBuiltinsToValue()
+        {
+            var sub = Make(
+                yamlDir: @"C:\projects",
+                tokens: new Dictionary<string, string> { ["AcceptEula"] = @"[YamlDir]\eula" });
+            Assert.True(sub.TryGetValue("AcceptEula", out var v));
+            Assert.Equal(@"C:\projects\eula", v);
+        }
     }
 
     // -----------------------------------------------------------------------

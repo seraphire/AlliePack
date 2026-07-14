@@ -95,6 +95,23 @@ namespace AlliePack
             return value;
         }
 
+        /// <summary>
+        /// Looks up a single named token's value (built-ins applied) from the merged
+        /// variables: / --define dictionary.  Returns false if the token is not defined.
+        /// Lets callers read an opt-in setting (e.g. AcceptEula) regardless of whether
+        /// it arrived from the yaml variables: block or a --define on the command line.
+        /// </summary>
+        public bool TryGetValue(string key, out string value)
+        {
+            if (_tokens.TryGetValue(key, out var raw))
+            {
+                value = ApplyBuiltins(raw);
+                return true;
+            }
+            value = string.Empty;
+            return false;
+        }
+
         // -----------------------------------------------------------------------
         // Helpers
         // -----------------------------------------------------------------------
