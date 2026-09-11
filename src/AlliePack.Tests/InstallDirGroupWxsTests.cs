@@ -91,11 +91,15 @@ namespace AlliePack.Tests
                 Group("HelpAssets", @"[INSTALLDIR]\Help", "logo.png"),
                 @"[INSTALLDIR]\Help", install, feature: null);
 
-            var project = new ManagedProject("TestApp", root)
+            // A plain Project, not a ManagedProject: nothing here needs managed custom
+            // actions, and ManagedProject makes WixSharp package its CA assembly, which
+            // fails when the test host shadow-copies WixSharp.dll.
+            var project = new Project("TestApp", root)
             {
                 GUID = new Guid("d29dab91-77c6-455e-924a-99b03300681a"),
                 OutDir = _dir,
                 OutFileName = "TestApp",
+                UI = WUI.WixUI_ProgressOnly,
             };
 
             Compiler.BuildWxs(project, Compiler.OutputType.MSI);

@@ -21,7 +21,7 @@ phase is implemented.
 | GAP-10 | Shortcut without `description:` emits empty `Description=""` (WiX0006) | Unphased | **Open** | Drawing06 (description-less shortcuts) |
 | GAP-11 | `destinationDir` accepts bracketed WiX paths, incl. `[INSTALLDIR]` | Unphased | **Closed** | LeadView (ini + icon must sit beside the exe) |
 | GAP-12 | Component flags (`permanent`, `condition`) on `structure:` entries | Unphased | **Open** | LeadView (deferred; workaround below) |
-| GAP-13 | No MSI-backed integration test; MsiInspector is not wired to AlliePack.Tests | Unphased | **Open** | PR 47 review (GAP-11 coverage) |
+| GAP-13 | No MSI-backed integration test; MsiInspector is not wired to AlliePack.Tests | Unphased | **Closed** | PR 47 review (GAP-11 coverage) |
 
 ---
 
@@ -434,27 +434,31 @@ component semantics.
 
 ### GAP-13 -- No MSI-backed integration test
 
-**Problem:** `AlliePack.Tests` asserts at two levels: the object graph handed to
+**Problem:** `AlliePack.Tests` asserted at two levels: the object graph handed to
 WixSharp, and the WXS that WixSharp emits (`Compiler.BuildWxs`, which does not
-invoke wix.exe).  Nothing compiles an MSI and inspects its tables, so a defect
+invoke wix.exe).  Nothing compiled an MSI and inspected its tables, so a defect
 that appears only in the File, Component or Directory tables of the finished
 package -- rather than in the WXS -- would pass the whole suite.
 
-`tools/MsiInspector/` was built for exactly this: its README describes typed
-queries for "files in correct directories, components reference correct paths, no
-duplicate Directory rows".  It is a separate solution with its own tests, and
-`AlliePack.Tests` does not reference it.
+`tools/MsiInspector/` was built for exactly this, but was a separate solution
+that `AlliePack.Tests` did not reference.
 
-**Cost:** a cross-solution project reference from `AlliePack.Tests` to
-`tools/MsiInspector`, and wix.exe becomes a prerequisite for running the suite.
-There is no CI for this repo at present, so that prerequisite falls on whoever
-runs the tests locally rather than on a build agent - which also means it should
-probably sit behind a trait filter so a checkout without wix.exe still gets a
-green run.
+**Closed.** `AlliePack.Tests` now references `MsiInspector`, and
+`InstallDirGroupMsiTests` compiles a real MSI with wix.exe and asserts its File,
+Component and Directory tables.  Tests carrying `[WixRequiredFact]` skip
+themselves when wix.exe is not on PATH, so a checkout without the toolchain still
+runs green rather than failing for an unrelated reason.
 
-**Current mitigation:** the WXS-level tests in `InstallDirGroupWxsTests` cover the
-serialization risks that motivated this (directory reuse emitting one element,
-component flags surviving, every component referenced by a feature), and MSI
-output is verified by hand on real installers -- for GAP-11, the LeadView MSI's
-File/Component/Directory tables were queried directly and showed every file under
-INSTALLDIR with the config file at component attributes 144.
+**What it found immediately:** MsiInspector returned 0 for every integer column.
+`DtfBackend.GetColumns` took column types from the `_Columns` table, whose `Type`
+field is an integer bitfield (1282 for an i2 column) rather than the IDT notation
+(`i2`, `s72`) that `ReadField` switches on.  Every type check fell through to the
+string branch, so `Component.Attributes`, `File.FileSize`, `File.Attributes` and
+`File.Sequence` all silently read as 0 -- the worst failure mode for a library
+whose only job is supplying assertions.  Column types now come from DTF's own
+`ColumnInfo`, and `IntegerColumnTests` in the MsiInspector suite pins it.
+
+This is the argument for MSI-level coverage in miniature: the WXS carried
+`NeverOverwrite="yes" Permanent="yes"` and the MSI really did have component
+attributes 144, but the tool reading it said 0.  Neither the object-graph tests
+nor the WXS tests could have surfaced that.

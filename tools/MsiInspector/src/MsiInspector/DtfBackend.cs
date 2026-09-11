@@ -40,24 +40,18 @@ namespace MsiInspector
             ThrowIfDisposed();
             if (tableName == null) throw new ArgumentNullException(nameof(tableName));
 
-            // _Columns has Table, Number, Name, Type
-            // The Type field encodes column type and constraints in MSI's compact notation
-            // (e.g., "s72" = required string up to 72 chars; "S255" = nullable string up to 255).
-            // For IDT export we keep the raw type string; consumers can parse if needed.
+            // Column types come from DTF's own column metadata rather than from the
+            // _Columns table.  _Columns.Type is an integer bitfield (e.g. 1282 for i2),
+            // not the IDT notation this type string is expected to carry ("i2", "s72"),
+            // and reading it as a string yields a numeric string that no consumer can
+            // interpret -- which silently turned every integer column into 0.
             var columns = new List<(int Number, string Name, string Type)>();
-            using (var view = _db.OpenView(
-                "SELECT `Number`, `Name`, `Type` FROM `_Columns` WHERE `Table` = ?"))
+            using (var view = _db.OpenView("SELECT * FROM `" + tableName + "`"))
             {
-                using var paramRecord = new Record(1);
-                paramRecord.SetString(1, tableName);
-                view.Execute(paramRecord);
-                Record? record;
-                while ((record = view.Fetch()) != null)
+                int number = 1;
+                foreach (ColumnInfo column in view.Columns)
                 {
-                    using (record)
-                    {
-                        columns.Add((record.GetInteger(1), record.GetString(2), record.GetString(3)));
-                    }
+                    columns.Add((number++, column.Name, ToIdtType(column)));
                 }
             }
 
@@ -170,6 +164,25 @@ namespace MsiInspector
         private void ThrowIfDisposed()
         {
             if (_disposed) throw new ObjectDisposedException(nameof(DtfBackend));
+        }
+
+        /// <summary>
+        /// Renders a DTF column as the IDT type notation the rest of MsiInspector reads:
+        /// a leading <c>s</c> (string), <c>i</c> (integer) or <c>v</c> (stream), followed
+        /// by the column size.  Lowercase means required, uppercase nullable, matching the
+        /// IDT convention.
+        /// </summary>
+        private static string ToIdtType(ColumnInfo column)
+        {
+            char kind;
+            if (column.Type == typeof(System.IO.Stream)) kind = 'v';
+            else if (column.Type == typeof(string))      kind = 's';
+            else                                         kind = 'i';
+
+            // IDT: lowercase = NOT NULL, uppercase = nullable.
+            if (!column.IsRequired) kind = char.ToUpperInvariant(kind);
+
+            return kind.ToString() + column.Size.ToString(System.Globalization.CultureInfo.InvariantCulture);
         }
 
         private static object? ReadField(Record record, int field, string idtType)
