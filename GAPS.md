@@ -19,6 +19,8 @@ phase is implemented.
 | GAP-8 | Exported `WixSharp.CA.dll` is non-deterministic (churns every export) | Unphased | **Closed** (via GAP-9) | LeadView committed pack/ workflow |
 | GAP-9 | Strip WixSharp runtime CA when unused (default, no managed CAs) -- pure-WiX WXS, smaller MSI | Unphased | **Closed** | LeadView (standard UI, no custom actions) |
 | GAP-10 | Shortcut without `description:` emits empty `Description=""` (WiX0006) | Unphased | **Open** | Drawing06 (description-less shortcuts) |
+| GAP-11 | `destinationDir` accepts bracketed WiX paths, incl. `[INSTALLDIR]` | Unphased | **Closed** | LeadView (ini + icon must sit beside the exe) |
+| GAP-12 | Component flags (`permanent`, `condition`) on `structure:` entries | Unphased | **Open** | LeadView (deferred; workaround below) |
 
 ---
 
@@ -343,3 +345,86 @@ if (!string.IsNullOrEmpty(s.Description)) shortcut.Description = s.Description;
 ```
 
 **Workaround:** give every shortcut a non-empty `description:` in the YAML.
+
+---
+
+### GAP-11 -- Bracketed `destinationDir`, including `[INSTALLDIR]`
+
+**Problem:** `groups:` was the only block carrying component semantics
+(`condition: notExists`, `permanent: true`), but `destinationDir` resolved only
+against `directories:` entries, which name locations *outside* the install
+folder.  A file that must sit next to the executable and survive an upgrade was
+therefore inexpressible: `structure:` puts it in the right place with no flags,
+`groups:` gives it the flags in the wrong place.
+
+LeadView hit this with `LeadView.ini`.  The app reads and writes it at
+`App.Path` (the exe directory), so it has to land in `INSTALLDIR`; it also holds
+operator-edited settings, so an upgrade must not overwrite it.  The installer had
+been working around this by installing to a hard-coded `C:\\Leadview` via an
+absolute-path `directories:` entry, which only matched the runtime lookup if the
+operator happened to install there.
+
+**Implemented:** `destinationDir` accepts a bracketed WiX path written inline,
+with no matching `directories:` entry:
+
+```yaml
+groups:
+  - id: DefaultConfig
+    destinationDir: "[INSTALLDIR]"
+    condition: notExists
+    permanent: true
+    files:
+      - source: "installer/app.ini"
+
+  - id: HelpAssets
+    destinationDir: "[INSTALLDIR]\\Help"
+    files:
+      - source: "docs:*.png"
+```
+
+`[INSTALLDIR]` is not a standard WiX folder property -- it is the id of the
+directory AlliePack builds from `product.installDir` -- so it is anchored onto
+that existing `Dir` rather than emitted as a second root.  Trailing segments name
+subfolders, and a subfolder `structure:` already created is reused rather than
+duplicated.  Any other bracketed value (`[CommonAppDataFolder]\\Acme`) is passed
+through as written, which is what `directories:` paths already supported.
+
+---
+
+### GAP-12 -- Component flags on `structure:` entries
+
+**Problem:** `permanent:` and `condition:` live on `groups:` only.  A file that
+arrives as part of a harvested tree -- a `solution:` build output, or a `**` glob
+-- cannot be flagged without pulling it out of that tree.  The canonical case is
+a config file that ships in `bin\\Release` and must not be overwritten on upgrade.
+
+**Proposed syntax:**
+```yaml
+structure:
+  - source: "bin:appsettings.json"
+    condition: notExists
+    permanent: true
+```
+
+**Workaround (why this is deferred):** exclude the file from the harvest and
+re-add it as a group, which GAP-11 now makes possible:
+
+```yaml
+structure:
+  - solution: "$(Solution)"
+    excludeFiles:
+      - "**/appsettings.json"
+
+groups:
+  - id: AppSettings
+    destinationDir: "[INSTALLDIR]"
+    condition: notExists
+    files:
+      - source: "bin:appsettings.json"
+```
+
+So this is ergonomics, not a capability gap.  It is also a second way to say
+something `groups:` already says, so closing it should come with a rule for which
+block is canonical -- see the division of labour in
+[Help/schema-guide.md](Help/schema-guide.md): `structure:` is layout, `groups:` is
+component semantics.

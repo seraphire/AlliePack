@@ -307,12 +307,12 @@ namespace AlliePack
 
             foreach (var group in _config.Groups)
             {
-                if (!namedDirMap.TryGetValue(group.DestinationDir, out var destPath))
+                if (!TryResolveGroupDestination(group.DestinationDir, namedDirMap, out var destPath))
                 {
                     Console.WriteLine($"Warning: Group '{group.Id}' references unknown directory '{group.DestinationDir}'");
                     continue;
                 }
-                var groupRootDir = BuildGroupDir(group, destPath, feature: null);
+                var groupRootDir = BuildGroupDir(group, destPath, targetDir, feature: null);
                 if (groupRootDir != null) entities.Add(groupRootDir);
             }
 
@@ -371,12 +371,12 @@ namespace AlliePack
 
                 foreach (var group in fc.Groups)
                 {
-                    if (!namedDirMap.TryGetValue(group.DestinationDir, out var destPath))
+                    if (!TryResolveGroupDestination(group.DestinationDir, namedDirMap, out var destPath))
                     {
                         Console.WriteLine($"Warning: Feature '{fc.Id}' group '{group.Id}' references unknown directory '{group.DestinationDir}'");
                         continue;
                     }
-                    var groupRootDir = BuildGroupDir(group, destPath, wixFeature, featureLabel: fc.Id);
+                    var groupRootDir = BuildGroupDir(group, destPath, targetDir, wixFeature, featureLabel: fc.Id);
                     if (groupRootDir != null) entities.Add(groupRootDir);
                 }
             }
@@ -1672,6 +1672,7 @@ Write-Host ""Done: $msiPath""
         private Dir? BuildGroupDir(
             FileGroupConfig group,
             string destPath,
+            Dir? installDir,
             Feature? feature,
             string? featureLabel = null)
         {
@@ -1706,6 +1707,33 @@ Write-Host ""Done: $msiPath""
 
             string[] groupPathParts = destPath.Replace('/', '\\')
                 .Split(new[] { '\\' }, StringSplitOptions.RemoveEmptyEntries);
+
+            // [INSTALLDIR] is not a standard WiX folder property -- it is the id of the
+            // directory AlliePack builds from product.installDir.  Anchor the group onto
+            // that existing Dir instead of emitting a second root, so group files land in
+            // the install folder alongside structure: content.  Trailing segments create
+            // (or reuse) subfolders under it: "[INSTALLDIR]\Help" -> INSTALLDIR\Help.
+            if (groupPathParts.Length > 0 && IsInstallDirToken(groupPathParts[0]))
+            {
+                if (installDir == null)
+                {
+                    Console.WriteLine($"Warning: {groupLabel}: [INSTALLDIR] is not available as a destination");
+                    return null;
+                }
+
+                Dir anchor = installDir;
+                for (int i = 1; i < groupPathParts.Length; i++)
+                    anchor = GetOrAddChildDir(anchor, groupPathParts[i]);
+
+                anchor.Files = (anchor.Files ?? new File[0]).Concat(groupFiles).ToArray();
+
+                if (_options.IsVerbose)
+                    Console.WriteLine($"{groupLabel}: {groupFiles.Count} file(s) -> {destPath}");
+
+                // Attached in place; there is no new root directory for the caller to add.
+                return null;
+            }
+
             Dir groupRootDir = new Dir(groupPathParts[0]);
             Dir leafDir = groupRootDir;
             for (int i = 1; i < groupPathParts.Length; i++)
@@ -1720,6 +1748,55 @@ Write-Host ""Done: $msiPath""
                 Console.WriteLine($"{groupLabel}: {groupFiles.Count} file(s) -> {destPath}");
 
             return groupRootDir;
+        }
+
+        /// <summary>
+        /// Resolves a group's <c>destinationDir</c> to a directory path.  A bracketed
+        /// value is a WiX path written inline (<c>[INSTALLDIR]</c>,
+        /// <c>[INSTALLDIR]\Help</c>, <c>[CommonAppDataFolder]\Acme</c>) and is used as
+        /// written; anything else is an id that must appear in <c>directories:</c>.
+        /// </summary>
+        internal static bool TryResolveGroupDestination(
+            string destinationDir,
+            Dictionary<string, string> namedDirMap,
+            out string destPath)
+        {
+            destPath = string.Empty;
+            if (string.IsNullOrWhiteSpace(destinationDir)) return false;
+
+            string trimmed = destinationDir.Trim();
+            if (trimmed.StartsWith("["))
+            {
+                destPath = trimmed;
+                return true;
+            }
+
+            return namedDirMap.TryGetValue(trimmed, out destPath!);
+        }
+
+        /// <summary>
+        /// True when a path segment names the install directory itself.
+        /// </summary>
+        internal static bool IsInstallDirToken(string segment)
+        {
+            return string.Equals(segment, "[INSTALLDIR]", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Returns the child directory of <paramref name="parent"/> with the given name,
+        /// creating it when absent.  Reusing an existing child keeps a group that targets
+        /// an INSTALLDIR subfolder in the same WiX directory as the structure: content
+        /// already there, rather than producing a duplicate directory element.
+        /// </summary>
+        internal static Dir GetOrAddChildDir(Dir parent, string name)
+        {
+            var existing = parent.Dirs?.FirstOrDefault(
+                d => string.Equals(d.Name, name, StringComparison.OrdinalIgnoreCase));
+            if (existing != null) return existing;
+
+            var child = new Dir(name);
+            parent.Dirs = (parent.Dirs ?? new Dir[0]).Concat(new[] { child }).ToArray();
+            return child;
         }
 
         private List<ResolvedFile> DeduplicateFiles(List<ResolvedFile> files)

@@ -269,6 +269,35 @@ groups:
 
 `permanent: true` on a group means the files are left on disk when the product is uninstalled. Use this for user data or generated files that the application writes after installation.
 
+### Groups that target `INSTALLDIR`
+
+`destinationDir:` also accepts a bracketed WiX path written inline, with no matching `directories:` entry. The special value `[INSTALLDIR]` is the install folder itself:
+
+```yaml
+groups:
+  - id: DefaultConfig
+    destinationDir: "[INSTALLDIR]"
+    condition: notExists
+    files:
+      - source: "installer/app.ini"
+
+  - id: HelpAssets
+    destinationDir: "[INSTALLDIR]\\Help"
+    files:
+      - source: "docs:*.png"
+```
+
+Use this when a file has to sit next to the executable *and* needs component semantics -- `condition: notExists` or `permanent: true` -- which `structure:` does not express. Trailing path segments name subfolders of the install directory, and a subfolder that `structure:` already created is reused rather than duplicated.
+
+The division of labour:
+
+| Block | Answers |
+|---|---|
+| `structure:` | Where a file sits in the install tree |
+| `groups:` | How the component behaves -- destination, overwrite, uninstall |
+
+When both could express the same thing, put it in `groups:` if it needs a flag and in `structure:` otherwise.
+
 ---
 
 ## Optional installer features
