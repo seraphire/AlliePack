@@ -341,7 +341,7 @@ For a service that should only start after another service is running:
 
 ---
 
-## Installing files outside INSTALLDIR
+## Installing files to a fixed destination, or with component flags
 
 Use `directories:` to define named destinations and `groups:` to assign files to them:
 

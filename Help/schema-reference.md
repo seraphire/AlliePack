@@ -291,12 +291,13 @@ Named install destinations outside `INSTALLDIR`. Referenced by `id` in `groups:`
 
 ## `groups:`
 
-Files installed to named directories (outside `INSTALLDIR`).
+Files that need component semantics -- a fixed destination, an overwrite rule, or
+an uninstall rule -- rather than plain placement in the install tree.
 
 | Field | Type | Notes |
 |---|---|---|
 | `id` | string | Group name (used in logging) |
-| `destinationDir` | string | References a `directories[].id` |
+| `destinationDir` | string | A `directories[].id`, or a bracketed WiX path written inline: `[INSTALLDIR]`, `[INSTALLDIR]\Help`, `[CommonAppDataFolder]\Acme` |
 | `condition` | string | `notExists` — skip file if destination already exists |
 | `permanent` | bool | `true` — file survives uninstall |
 | `files` | list | List of `{ source, rename? }` entries |

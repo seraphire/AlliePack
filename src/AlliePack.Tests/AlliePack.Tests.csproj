@@ -15,5 +15,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\AlliePack\AlliePack.csproj" />
+    <!-- Read-only MSI inspection for the MSI-backed integration tests (GAP-13).
+         Those tests skip themselves when wix.exe is not on PATH. -->
+    <ProjectReference Include="..\..\tools\MsiInspector\src\MsiInspector\MsiInspector.csproj" />
   </ItemGroup>
 </Project>

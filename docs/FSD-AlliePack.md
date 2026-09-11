@@ -230,12 +230,12 @@ directories:
     subPath: "MyApp"
 ```
 
-**`groups:`** — files installed to named directories:
+**`groups:`** - files needing a fixed destination or component semantics:
 
 | Field | Type | Notes |
 |---|---|---|
 | `id` | string | Group name (for logging) |
-| `destinationDir` | string | References a `directories:` `id` |
+| `destinationDir` | string | A `directories:` `id`, or a bracketed WiX path written inline: `[INSTALLDIR]`, `[INSTALLDIR]\Help`, `[CommonAppDataFolder]\Acme` |
 | `condition` | string | `notExists` — skip if destination file already present |
 | `permanent` | bool | Keep files on uninstall (default: false) |
 | `files` | list | List of `{ source, rename? }` entries |

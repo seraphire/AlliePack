@@ -19,6 +19,9 @@ phase is implemented.
 | GAP-8 | Exported `WixSharp.CA.dll` is non-deterministic (churns every export) | Unphased | **Closed** (via GAP-9) | LeadView committed pack/ workflow |
 | GAP-9 | Strip WixSharp runtime CA when unused (default, no managed CAs) -- pure-WiX WXS, smaller MSI | Unphased | **Closed** | LeadView (standard UI, no custom actions) |
 | GAP-10 | Shortcut without `description:` emits empty `Description=""` (WiX0006) | Unphased | **Open** | Drawing06 (description-less shortcuts) |
+| GAP-11 | `destinationDir` accepts bracketed WiX paths, incl. `[INSTALLDIR]` | Unphased | **Closed** | LeadView (ini + icon must sit beside the exe) |
+| GAP-12 | Component flags (`permanent`, `condition`) on `structure:` entries | Unphased | **Open** | LeadView (deferred; workaround below) |
+| GAP-13 | No MSI-backed integration test; MsiInspector is not wired to AlliePack.Tests | Unphased | **Closed** | PR 47 review (GAP-11 coverage) |
 
 ---
 
@@ -343,3 +346,119 @@ if (!string.IsNullOrEmpty(s.Description)) shortcut.Description = s.Description;
 ```
 
 **Workaround:** give every shortcut a non-empty `description:` in the YAML.
+
+---
+
+### GAP-11 -- Bracketed `destinationDir`, including `[INSTALLDIR]`
+
+**Problem:** `groups:` was the only block carrying component semantics
+(`condition: notExists`, `permanent: true`), but `destinationDir` resolved only
+against `directories:` entries, which name locations *outside* the install
+folder.  A file that must sit next to the executable and survive an upgrade was
+therefore inexpressible: `structure:` puts it in the right place with no flags,
+`groups:` gives it the flags in the wrong place.
+
+LeadView hit this with `LeadView.ini`.  The app reads and writes it at
+`App.Path` (the exe directory), so it has to land in `INSTALLDIR`; it also holds
+operator-edited settings, so an upgrade must not overwrite it.  The installer had
+been working around this by installing to a hard-coded `C:\\Leadview` via an
+absolute-path `directories:` entry, which only matched the runtime lookup if the
+operator happened to install there.
+
+**Implemented:** `destinationDir` accepts a bracketed WiX path written inline,
+with no matching `directories:` entry:
+
+```yaml
+groups:
+  - id: DefaultConfig
+    destinationDir: "[INSTALLDIR]"
+    condition: notExists
+    permanent: true
+    files:
+      - source: "installer/app.ini"
+
+  - id: HelpAssets
+    destinationDir: "[INSTALLDIR]\\Help"
+    files:
+      - source: "docs:*.png"
+```
+
+`[INSTALLDIR]` is not a standard WiX folder property -- it is the id of the
+directory AlliePack builds from `product.installDir` -- so it is anchored onto
+that existing `Dir` rather than emitted as a second root.  Trailing segments name
+subfolders, and a subfolder `structure:` already created is reused rather than
+duplicated.  Any other bracketed value (`[CommonAppDataFolder]\\Acme`) is passed
+through as written, which is what `directories:` paths already supported.
+
+---
+
+### GAP-12 -- Component flags on `structure:` entries
+
+**Problem:** `permanent:` and `condition:` live on `groups:` only.  A file that
+arrives as part of a harvested tree -- a `solution:` build output, or a `**` glob
+-- cannot be flagged without pulling it out of that tree.  The canonical case is
+a config file that ships in `bin\\Release` and must not be overwritten on upgrade.
+
+**Proposed syntax:**
+```yaml
+structure:
+  - source: "bin:appsettings.json"
+    condition: notExists
+    permanent: true
+```
+
+**Workaround (why this is deferred):** exclude the file from the harvest and
+re-add it as a group, which GAP-11 now makes possible:
+
+```yaml
+structure:
+  - solution: "$(Solution)"
+    excludeFiles:
+      - "**/appsettings.json"
+
+groups:
+  - id: AppSettings
+    destinationDir: "[INSTALLDIR]"
+    condition: notExists
+    files:
+      - source: "bin:appsettings.json"
+```
+
+So this is ergonomics, not a capability gap.  It is also a second way to say
+something `groups:` already says, so closing it should come with a rule for which
+block is canonical -- see the division of labour in
+[Help/schema-guide.md](Help/schema-guide.md): `structure:` is layout, `groups:` is
+component semantics.
+
+---
+
+### GAP-13 -- No MSI-backed integration test
+
+**Problem:** `AlliePack.Tests` asserted at two levels: the object graph handed to
+WixSharp, and the WXS that WixSharp emits (`Compiler.BuildWxs`, which does not
+invoke wix.exe).  Nothing compiled an MSI and inspected its tables, so a defect
+that appears only in the File, Component or Directory tables of the finished
+package -- rather than in the WXS -- would pass the whole suite.
+
+`tools/MsiInspector/` was built for exactly this, but was a separate solution
+that `AlliePack.Tests` did not reference.
+
+**Closed.** `AlliePack.Tests` now references `MsiInspector`, and
+`InstallDirGroupMsiTests` compiles a real MSI with wix.exe and asserts its File,
+Component and Directory tables.  Tests carrying `[WixRequiredFact]` skip
+themselves when wix.exe is not on PATH, so a checkout without the toolchain still
+runs green rather than failing for an unrelated reason.
+
+**What it found immediately:** MsiInspector returned 0 for every integer column.
+`DtfBackend.GetColumns` took column types from the `_Columns` table, whose `Type`
+field is an integer bitfield (1282 for an i2 column) rather than the IDT notation
+(`i2`, `s72`) that `ReadField` switches on.  Every type check fell through to the
+string branch, so `Component.Attributes`, `File.FileSize`, `File.Attributes` and
+`File.Sequence` all silently read as 0 -- the worst failure mode for a library
+whose only job is supplying assertions.  Column types now come from DTF's own
+`ColumnInfo`, and `IntegerColumnTests` in the MsiInspector suite pins it.
+
+This is the argument for MSI-level coverage in miniature: the WXS carried
+`NeverOverwrite="yes" Permanent="yes"` and the MSI really did have component
+attributes 144, but the tool reading it said 0.  Neither the object-graph tests
+nor the WXS tests could have surfaced that.

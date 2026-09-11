@@ -230,9 +230,11 @@ AlliePack.exe allie-pack.yaml --flag ClientB -D VERSION=2.1.0 --output dist\Clie
 
 ---
 
-## Files outside `INSTALLDIR`: directories and groups
+## Directories and groups: destinations and component behaviour
 
-Not everything belongs in the main application folder. Config files might go in `AppData`, PowerShell modules in the PS modules directory, and so on. This is what `directories:` and `groups:` are for.
+`structure:` covers the common case: files laid out in the install tree, installed and removed with the product. Two things fall outside it. Some files belong somewhere else entirely -- config in `AppData`, PowerShell modules in the PS modules directory. Others belong in the install tree but must not behave like ordinary content: a default config that an upgrade should not overwrite, or that an uninstall should leave behind.
+
+`directories:` and `groups:` handle both. `directories:` names external destinations; `groups:` assigns files to a destination and carries the component flags. A group can target a named external directory or, as shown below, the install directory itself.
 
 `directories:` defines named destinations by either a full path or a well-known `type:`:
 
@@ -268,6 +270,35 @@ groups:
 `condition: notExists` is especially useful for default config files that should be installed on a fresh install but left alone on upgrade — the user may have customized the file.
 
 `permanent: true` on a group means the files are left on disk when the product is uninstalled. Use this for user data or generated files that the application writes after installation.
+
+### Groups that target `INSTALLDIR`
+
+`destinationDir:` also accepts a bracketed WiX path written inline, with no matching `directories:` entry. `[INSTALLDIR]` is the install folder itself:
+
+```yaml
+groups:
+  - id: DefaultConfig
+    destinationDir: "[INSTALLDIR]"
+    condition: notExists
+    files:
+      - source: "installer/app.ini"
+
+  - id: HelpAssets
+    destinationDir: "[INSTALLDIR]\\Help"
+    files:
+      - source: "docs:*.png"
+```
+
+Use this when a file has to sit next to the executable *and* needs component semantics -- `condition: notExists` or `permanent: true` -- which `structure:` does not express. Trailing path segments name subfolders of the install directory, and a subfolder that `structure:` already created is reused rather than duplicated.
+
+The division of labour:
+
+| Block | Answers |
+|---|---|
+| `structure:` | Where a file sits in the install tree |
+| `groups:` | How the component behaves -- destination, overwrite, uninstall |
+
+When both could express the same thing, put it in `groups:` if it needs a flag and in `structure:` otherwise.
 
 ---
 
