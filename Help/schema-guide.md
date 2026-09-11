@@ -230,9 +230,11 @@ AlliePack.exe allie-pack.yaml --flag ClientB -D VERSION=2.1.0 --output dist\Clie
 
 ---
 
-## Files outside `INSTALLDIR`: directories and groups
+## Directories and groups: destinations and component behaviour
 
-Not everything belongs in the main application folder. Config files might go in `AppData`, PowerShell modules in the PS modules directory, and so on. This is what `directories:` and `groups:` are for.
+`structure:` covers the common case: files laid out in the install tree, installed and removed with the product. Two things fall outside it. Some files belong somewhere else entirely -- config in `AppData`, PowerShell modules in the PS modules directory. Others belong in the install tree but must not behave like ordinary content: a default config that an upgrade should not overwrite, or that an uninstall should leave behind.
+
+`directories:` and `groups:` handle both. `directories:` names external destinations; `groups:` assigns files to a destination and carries the component flags. A group can target a named external directory or, as shown below, the install directory itself.
 
 `directories:` defines named destinations by either a full path or a well-known `type:`:
 
@@ -271,7 +273,7 @@ groups:
 
 ### Groups that target `INSTALLDIR`
 
-`destinationDir:` also accepts a bracketed WiX path written inline, with no matching `directories:` entry. The special value `[INSTALLDIR]` is the install folder itself:
+`destinationDir:` also accepts a bracketed WiX path written inline, with no matching `directories:` entry. `[INSTALLDIR]` is the install folder itself:
 
 ```yaml
 groups:

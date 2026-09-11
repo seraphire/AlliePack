@@ -301,7 +301,8 @@ namespace AlliePack
                     Console.WriteLine($"Service '{svc.Name}' -> {svc.Executable}");
             }
 
-            // Named directory groups -- files installed outside INSTALLDIR
+            // File groups -- a named directory from directories: (outside INSTALLDIR),
+            // or a bracketed path written inline, which may be [INSTALLDIR] itself.
             var namedDirMap = _config.Directories
                 .ToDictionary(d => d.Id, d => ResolveDirectoryPath(d, isMachine), StringComparer.OrdinalIgnoreCase);
 
@@ -1669,7 +1670,7 @@ Write-Host ""Done: $msiPath""
             wixFile.Shortcuts = (wixFile.Shortcuts ?? new FileShortcut[0]).Concat(new[] { shortcut }).ToArray();
         }
 
-        private Dir? BuildGroupDir(
+        internal Dir? BuildGroupDir(
             FileGroupConfig group,
             string destPath,
             Dir? installDir,
@@ -1772,6 +1773,18 @@ Write-Host ""Done: $msiPath""
             }
 
             return namedDirMap.TryGetValue(trimmed, out destPath!);
+        }
+
+        /// <summary>
+        /// True when a resolved group destination lands inside the install directory,
+        /// i.e. its first path segment is [INSTALLDIR].
+        /// </summary>
+        internal static bool IsInstallDirDestination(string destPath)
+        {
+            if (string.IsNullOrWhiteSpace(destPath)) return false;
+            string[] parts = destPath.Replace('/', '\\')
+                .Split(new[] { '\\' }, StringSplitOptions.RemoveEmptyEntries);
+            return parts.Length > 0 && IsInstallDirToken(parts[0]);
         }
 
         /// <summary>
@@ -2583,19 +2596,38 @@ Write-Host ""Done: $msiPath""
 
             if (_config.Groups.Any())
             {
-                Console.WriteLine("File Groups (outside INSTALLDIR):");
-                foreach (var group in _config.Groups)
+                // A group whose destination resolves under [INSTALLDIR] installs into the
+                // install tree, not outside it, so the two are reported separately rather
+                // than under one heading that would be wrong for half of them.
+                var groupDests = _config.Groups
+                    .Select(g =>
+                    {
+                        var dirCfg = _config.Directories
+                            .FirstOrDefault(d => d.Id.Equals(g.DestinationDir, StringComparison.OrdinalIgnoreCase));
+                        string dest = dirCfg != null
+                            ? ResolveDirectoryPath(dirCfg, isMachineReport)
+                            : g.DestinationDir;
+                        return (Group: g, Dest: dest);
+                    })
+                    .ToList();
+
+                void WriteGroups(string heading, List<(FileGroupConfig Group, string Dest)> items)
                 {
-                    var dirCfg = _config.Directories
-                        .FirstOrDefault(d => d.Id.Equals(group.DestinationDir, StringComparison.OrdinalIgnoreCase));
-                    string dest = dirCfg != null
-                        ? ResolveDirectoryPath(dirCfg, isMachineReport)
-                        : group.DestinationDir;
-                    string condNote = group.Condition != null ? $" [condition: {group.Condition}]" : "";
-                    Console.WriteLine($"  [{group.Id}] -> {dest}{condNote}");
-                    foreach (var item in group.Files)
-                        Console.WriteLine($"    {item.Source}{(item.Rename != null ? $" (as {item.Rename})" : "")}");
+                    if (!items.Any()) return;
+                    Console.WriteLine(heading);
+                    foreach (var (group, dest) in items)
+                    {
+                        string condNote = group.Condition != null ? $" [condition: {group.Condition}]" : "";
+                        Console.WriteLine($"  [{group.Id}] -> {dest}{condNote}");
+                        foreach (var item in group.Files)
+                            Console.WriteLine($"    {item.Source}{(item.Rename != null ? $" (as {item.Rename})" : "")}");
+                    }
                 }
+
+                WriteGroups("File Groups (in INSTALLDIR):",
+                    groupDests.Where(x => IsInstallDirDestination(x.Dest)).ToList());
+                WriteGroups("File Groups (outside INSTALLDIR):",
+                    groupDests.Where(x => !IsInstallDirDestination(x.Dest)).ToList());
             }
 
             if (_config.Signing != null)
