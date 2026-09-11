@@ -300,7 +300,7 @@ services:
 
 ### `directories` and `groups`
 
-Install files to locations outside `INSTALLDIR`.
+Install files to a fixed destination, or with component flags that `structure:` does not express.
 
 ```yaml
 directories:
@@ -323,6 +323,20 @@ groups:
     files:
       - source: "installer/myapp.config.ini"
         rename: "config.ini"
+```
+
+`destinationDir` also takes a bracketed WiX path written inline, with no matching
+`directories:` entry. `[INSTALLDIR]` is the install folder itself, so a file that
+must sit beside the executable can still carry `condition:` / `permanent:`:
+
+```yaml
+groups:
+  - id: DefaultConfig
+    destinationDir: "[INSTALLDIR]"
+    condition: notExists
+    permanent: true
+    files:
+      - source: "installer/app.ini"
 ```
 
 ### `wixToolsPath`

@@ -21,6 +21,7 @@ phase is implemented.
 | GAP-10 | Shortcut without `description:` emits empty `Description=""` (WiX0006) | Unphased | **Open** | Drawing06 (description-less shortcuts) |
 | GAP-11 | `destinationDir` accepts bracketed WiX paths, incl. `[INSTALLDIR]` | Unphased | **Closed** | LeadView (ini + icon must sit beside the exe) |
 | GAP-12 | Component flags (`permanent`, `condition`) on `structure:` entries | Unphased | **Open** | LeadView (deferred; workaround below) |
+| GAP-13 | No MSI-backed integration test; MsiInspector is not wired to AlliePack.Tests | Unphased | **Open** | PR 47 review (GAP-11 coverage) |
 
 ---
 
@@ -428,3 +429,30 @@ something `groups:` already says, so closing it should come with a rule for whic
 block is canonical -- see the division of labour in
 [Help/schema-guide.md](Help/schema-guide.md): `structure:` is layout, `groups:` is
 component semantics.
+
+---
+
+### GAP-13 -- No MSI-backed integration test
+
+**Problem:** `AlliePack.Tests` asserts at two levels: the object graph handed to
+WixSharp, and the WXS that WixSharp emits (`Compiler.BuildWxs`, which does not
+invoke wix.exe).  Nothing compiles an MSI and inspects its tables, so a defect
+that appears only in the File, Component or Directory tables of the finished
+package -- rather than in the WXS -- would pass the whole suite.
+
+`tools/MsiInspector/` was built for exactly this: its README describes typed
+queries for "files in correct directories, components reference correct paths, no
+duplicate Directory rows".  It is a separate solution with its own tests, and
+`AlliePack.Tests` does not reference it.
+
+**Why this is not a drive-by fix:** compiling an MSI in the unit suite makes
+wix.exe a test-time prerequisite, which is a CI decision rather than a test
+addition, and it needs a cross-solution project reference plus a decision about
+whether these run by default or behind a trait filter.
+
+**Current mitigation:** the WXS-level tests in `InstallDirGroupWxsTests` cover the
+serialization risks that motivated this (directory reuse emitting one element,
+component flags surviving, every component referenced by a feature), and MSI
+output is verified by hand on real installers -- for GAP-11, the LeadView MSI's
+File/Component/Directory tables were queried directly and showed every file under
+INSTALLDIR with the config file at component attributes 144.

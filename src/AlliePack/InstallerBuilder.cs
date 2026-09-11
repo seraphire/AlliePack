@@ -2599,16 +2599,19 @@ Write-Host ""Done: $msiPath""
                 // A group whose destination resolves under [INSTALLDIR] installs into the
                 // install tree, not outside it, so the two are reported separately rather
                 // than under one heading that would be wrong for half of them.
+                // Resolve exactly as the build path does -- same trimming, same bracket
+                // handling, same named lookup -- so the report cannot disagree with what
+                // actually gets installed.
+                var reportDirMap = _config.Directories
+                    .ToDictionary(dir => dir.Id, dir => ResolveDirectoryPath(dir, isMachineReport),
+                                  StringComparer.OrdinalIgnoreCase);
+
                 var groupDests = _config.Groups
-                    .Select(g =>
-                    {
-                        var dirCfg = _config.Directories
-                            .FirstOrDefault(d => d.Id.Equals(g.DestinationDir, StringComparison.OrdinalIgnoreCase));
-                        string dest = dirCfg != null
-                            ? ResolveDirectoryPath(dirCfg, isMachineReport)
-                            : g.DestinationDir;
-                        return (Group: g, Dest: dest);
-                    })
+                    .Select(g => (
+                        Group: g,
+                        Dest: TryResolveGroupDestination(g.DestinationDir, reportDirMap, out var resolved)
+                            ? resolved
+                            : g.DestinationDir))
                     .ToList();
 
                 void WriteGroups(string heading, List<(FileGroupConfig Group, string Dest)> items)
