@@ -445,10 +445,12 @@ queries for "files in correct directories, components reference correct paths, n
 duplicate Directory rows".  It is a separate solution with its own tests, and
 `AlliePack.Tests` does not reference it.
 
-**Why this is not a drive-by fix:** compiling an MSI in the unit suite makes
-wix.exe a test-time prerequisite, which is a CI decision rather than a test
-addition, and it needs a cross-solution project reference plus a decision about
-whether these run by default or behind a trait filter.
+**Cost:** a cross-solution project reference from `AlliePack.Tests` to
+`tools/MsiInspector`, and wix.exe becomes a prerequisite for running the suite.
+There is no CI for this repo at present, so that prerequisite falls on whoever
+runs the tests locally rather than on a build agent - which also means it should
+probably sit behind a trait filter so a checkout without wix.exe still gets a
+green run.
 
 **Current mitigation:** the WXS-level tests in `InstallDirGroupWxsTests` cover the
 serialization risks that motivated this (directory reuse emitting one element,
