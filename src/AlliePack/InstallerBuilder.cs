@@ -1573,13 +1573,16 @@ Write-Host ""Done: $msiPath""
             return isMachine ? "machine" : "user";
         }
 
-        private ServiceInstaller BuildServiceInstaller(ServiceConfig svc)
+        internal ServiceInstaller BuildServiceInstaller(ServiceConfig svc)
         {
             var si = new ServiceInstaller
             {
                 Name         = svc.Name,
                 DisplayName  = svc.DisplayName ?? svc.Name,
-                Description  = svc.Description ?? string.Empty,
+                // GAP-10: null, not "".  WixSharp's Name setter defaults Description to the
+                // service name, so it must be cleared explicitly; but an empty string is
+                // serialized as Description="", which WiX rejects (WIX0006).  null omits it.
+                Description  = string.IsNullOrEmpty(svc.Description) ? null : svc.Description,
                 Account      = svc.Account,
                 Start        = ParseSvcStartType(svc.Start),
                 Type         = ParseSvcType(svc.Type),
@@ -1664,10 +1667,26 @@ Write-Host ""Done: $msiPath""
                 }
             }
 
-            var shortcut = new FileShortcut(s.Name, folder) { Description = s.Description };
+            var shortcut = BuildShortcut(s, folder);
+            wixFile.Shortcuts = (wixFile.Shortcuts ?? new FileShortcut[0]).Concat(new[] { shortcut }).ToArray();
+        }
+
+        /// <summary>
+        /// Creates the WixSharp shortcut for a <c>shortcuts:</c> entry.  <paramref name="folder"/>
+        /// is the already-resolved location (see <see cref="ResolveFolder"/>).
+        /// </summary>
+        internal FileShortcut BuildShortcut(ShortcutInfo s, string folder)
+        {
+            var shortcut = new FileShortcut(s.Name, folder);
+
+            // GAP-10: WixSharp serializes an empty string as Description="", which WiX
+            // rejects (WIX0006).  Leave the attribute unset when no description is given.
+            if (!string.IsNullOrEmpty(s.Description))
+                shortcut.Description = s.Description;
+
             if (!string.IsNullOrEmpty(s.Icon))
                 shortcut.IconFile = _resolver.Resolve(s.Icon!);
-            wixFile.Shortcuts = (wixFile.Shortcuts ?? new FileShortcut[0]).Concat(new[] { shortcut }).ToArray();
+            return shortcut;
         }
 
         internal Dir? BuildGroupDir(

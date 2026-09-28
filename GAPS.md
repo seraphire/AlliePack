@@ -18,7 +18,7 @@ phase is implemented.
 | GAP-7 | CLI should accept repeated `--define` flags (QOL) | Unphased | **Open** | LeadView _make_package (Solution + DocRoot) |
 | GAP-8 | Exported `WixSharp.CA.dll` is non-deterministic (churns every export) | Unphased | **Closed** (via GAP-9) | LeadView committed pack/ workflow |
 | GAP-9 | Strip WixSharp runtime CA when unused (default, no managed CAs) -- pure-WiX WXS, smaller MSI | Unphased | **Closed** | LeadView (standard UI, no custom actions) |
-| GAP-10 | Shortcut without `description:` emits empty `Description=""` (WiX0006) | Unphased | **Open** | Drawing06 (description-less shortcuts) |
+| GAP-10 | Shortcut without `description:` emits empty `Description=""` (WiX0006) | Unphased | **Closed** | Drawing06 (description-less shortcuts) |
 | GAP-11 | `destinationDir` accepts bracketed WiX paths, incl. `[INSTALLDIR]` | Unphased | **Closed** | LeadView (ini + icon must sit beside the exe) |
 | GAP-12 | Component flags (`permanent`, `condition`) on `structure:` entries | Unphased | **Open** | LeadView (deferred; workaround below) |
 | GAP-13 | No MSI-backed integration test; MsiInspector is not wired to AlliePack.Tests | Unphased | **Closed** | PR 47 review (GAP-11 coverage) |
@@ -346,6 +346,18 @@ if (!string.IsNullOrEmpty(s.Description)) shortcut.Description = s.Description;
 ```
 
 **Workaround:** give every shortcut a non-empty `description:` in the YAML.
+
+**Resolution (2026-09-28):** shortcut creation moved into
+`InstallerBuilder.BuildShortcut`, which assigns `Description` only when it is
+non-empty.  The same defect existed for `services:` -- `BuildServiceInstaller`
+set `Description = svc.Description ?? string.Empty`, emitting
+`ServiceInstall/@Description=""` for any service without `description:`.  It now
+sets `null` in that case; `null` (not merely "unset") is required because
+WixSharp's `ServiceInstaller.Name` setter defaults `Description` to the service
+name.  WixSharp's `[Xml]` attribute serializer and the shortcut attribute bag
+drop only `null` values, not empty strings, which is the root cause of both.
+Covered by `DescriptionAttributeWxsTests` (object graph plus `Compiler.BuildWxs`
+output; no WiX toolchain needed).
 
 ---
 
