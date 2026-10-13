@@ -259,6 +259,35 @@ namespace AlliePack
 
         [YamlMember(Alias = "allowInstallDirChange")]
         public bool AllowInstallDirChange { get; set; } = true;
+
+        // Standard UI artwork (WixUIBannerBmp / WixUIDialogBmp).
+        // banner: 493x58 bmp, top strip of inner pages.  dialog: 493x312 bmp, Welcome/Finish.
+        [YamlMember(Alias = "banner")]
+        public string? Banner { get; set; }
+
+        [YamlMember(Alias = "dialog")]
+        public string? Dialog { get; set; }
+
+        // "Launch <app>" checkbox on the Finish page (standard UI only).
+        [YamlMember(Alias = "launchOnExit")]
+        public LaunchOnExitConfig? LaunchOnExit { get; set; }
+    }
+
+    public class LaunchOnExitConfig
+    {
+        // Installed file to run, e.g. [INSTALLDIR]\\MyApp.exe
+        [YamlMember(Alias = "file")]
+        public string File { get; set; } = string.Empty;
+
+        [YamlMember(Alias = "text")]
+        public string Text { get; set; } = "Launch the application when setup exits.";
+
+        [YamlMember(Alias = "args")]
+        public string? Args { get; set; }
+
+        // Initial state of the checkbox.
+        [YamlMember(Alias = "checked")]
+        public bool Checked { get; set; }
     }
 
     public class UiConfigConverter : IYamlTypeConverter
@@ -280,6 +309,11 @@ namespace AlliePack
                 {
                     var key = ((Scalar)parser.Current!).Value;
                     parser.MoveNext();
+                    if (key.Equals("launchOnExit", StringComparison.OrdinalIgnoreCase))
+                    {
+                        config.LaunchOnExit = (LaunchOnExitConfig?)rootDeserializer(typeof(LaunchOnExitConfig));
+                        continue;
+                    }
                     var val = ((Scalar)parser.Current!).Value;
                     parser.MoveNext();
                     switch (key.ToLowerInvariant())
@@ -289,6 +323,12 @@ namespace AlliePack
                             break;
                         case "allowinstalldirchange":
                             config.AllowInstallDirChange = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
+                            break;
+                        case "banner":
+                            config.Banner = val;
+                            break;
+                        case "dialog":
+                            config.Dialog = val;
                             break;
                         // future keys (e.g. dialogs) handled here
                     }
@@ -372,6 +412,51 @@ namespace AlliePack
 
         [YamlMember(Alias = "features")]
         public List<FeatureConfig> Features { get; set; } = new();
+
+        // Installed programs to run (fire-and-forget) after InstallFinalize.
+        [YamlMember(Alias = "runAfterInstall")]
+        public List<RunAfterInstallConfig> RunAfterInstall { get; set; } = new();
+
+        // Install-time edits to installed XML files (util:XmlFile setValue).
+        [YamlMember(Alias = "xmlEdits")]
+        public List<XmlEditConfig> XmlEdits { get; set; } = new();
+    }
+
+    // -----------------------------------------------------------------------
+    // Post-install actions
+    // -----------------------------------------------------------------------
+
+    public class RunAfterInstallConfig
+    {
+        // Installed file to run, e.g. [INSTALLDIR]\\MyApp.exe
+        [YamlMember(Alias = "file")]
+        public string File { get; set; } = string.Empty;
+
+        [YamlMember(Alias = "args")]
+        public string? Args { get; set; }
+
+        // MSI condition.  Default: install/repair/upgrade, never on uninstall.
+        [YamlMember(Alias = "condition")]
+        public string Condition { get; set; } = "NOT REMOVE~=\"ALL\"";
+    }
+
+    public class XmlEditConfig
+    {
+        // Installed XML file to edit, e.g. [INSTALLDIR]\\settings.xml
+        [YamlMember(Alias = "file")]
+        public string File { get; set; } = string.Empty;
+
+        // XPath of the node to set.  May select an attribute directly (/Root/@attr).
+        [YamlMember(Alias = "path")]
+        public string Path { get; set; } = string.Empty;
+
+        // Optional attribute name on the element selected by path.
+        [YamlMember(Alias = "name")]
+        public string? Name { get; set; }
+
+        // New value; MSI-formatted, so [INSTALLDIR] etc. expand at install time.
+        [YamlMember(Alias = "value")]
+        public string Value { get; set; } = string.Empty;
     }
 
     // -----------------------------------------------------------------------
@@ -525,6 +610,15 @@ namespace AlliePack
 
         [YamlMember(Alias = "licenseFile")]
         public string? LicenseFile { get; set; }
+
+        // .ico shown in Add/Remove Programs (ARPPRODUCTICON).
+        [YamlMember(Alias = "icon")]
+        public string? Icon { get; set; }
+
+        // Emit <MajorUpgrade> so installing a newer version removes the older one
+        // (same UpgradeCode).  Off by default to keep existing configs unchanged.
+        [YamlMember(Alias = "majorUpgrade")]
+        public bool MajorUpgrade { get; set; }
     }
 
     // -----------------------------------------------------------------------
@@ -545,6 +639,11 @@ namespace AlliePack
         // the install scope (user for perUser, machine for perMachine) when omitted.
         [YamlMember(Alias = "scope")]
         public ConditionalString? Scope { get; set; }
+
+        // all (default) replaces the variable; first/last prepend/append to it.
+        // Use last (or first) for list variables like PATH -- all would overwrite it.
+        [YamlMember(Alias = "part")]
+        public string Part { get; set; } = "all";
     }
 
     // -----------------------------------------------------------------------

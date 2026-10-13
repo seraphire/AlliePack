@@ -237,6 +237,7 @@ namespace AlliePack
                 {
                     System = isSystem,
                     Permanent = false,
+                    Part = ParseEnvVarPart(ev.Part),
                 };
                 targetDir.GenericItems = (targetDir.GenericItems ?? new IGenericEntity[0])
                     .Concat(new IGenericEntity[] { envVar }).ToArray();
@@ -330,6 +331,7 @@ namespace AlliePack
                     {
                         System = isSystem,
                         Permanent = false,
+                        Part = ParseEnvVarPart(ev.Part),
                         Feature = wixFeature,
                     };
                     targetDir.GenericItems = (targetDir.GenericItems ?? new IGenericEntity[0])
@@ -400,6 +402,20 @@ namespace AlliePack
             project.ControlPanelInfo.Manufacturer = _config.Product.Manufacturer;
             project.Description = _config.Product.Description;
             project.Version = new Version(resolvedVersion);
+
+            if (!string.IsNullOrEmpty(_config.Product.Icon))
+                project.ControlPanelInfo.ProductIcon = _resolver.Resolve(_config.Product.Icon!);
+
+            if (_config.Product.MajorUpgrade)
+                project.MajorUpgrade = new MajorUpgrade
+                {
+                    Schedule = UpgradeSchedule.afterInstallInitialize,
+                    // MSI ignores the 4th version field when comparing, so builds that
+                    // differ only there count as the same version; replace rather than
+                    // install side by side.
+                    AllowSameVersionUpgrades = true,
+                    DowngradeErrorMessage = "A newer version of [ProductName] is already installed.",
+                };
 
             project.AttributesDefinition = isMachine ? "Scope=perMachine" : "Scope=perUser";
 
@@ -540,6 +556,57 @@ namespace AlliePack
                     project.WixSourceGenerated += SuppressLicenseDialogInstallDir;
                 }
             }
+
+            // Launch-on-exit checkbox, post-install runs, XML edits and UI artwork.
+            // The actions reference installed files by File Id, so pin readable Ids on
+            // those files now, before WixSharp generates the source.
+            var pinnedFileIds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            string? PinFileId(string path, string label)
+            {
+                string full = ResolvePath(path, installPath);
+                if (!fileMap.TryGetValue(full, out var wf))
+                {
+                    Console.WriteLine($"Warning: {label}: file not found in install tree: {path} (Resolved to: {full})");
+                    return null;
+                }
+                if (!pinnedFileIds.TryGetValue(full, out var id))
+                {
+                    id = "apFile" + (pinnedFileIds.Count + 1);
+                    wf.Id = id;
+                    pinnedFileIds[full] = id;
+                }
+                return id;
+            }
+
+            var extras = new InstallerExtras();
+            if (_config.Ui.LaunchOnExit is LaunchOnExitConfig loe)
+            {
+                if (useCustomUi)
+                    Console.WriteLine("Warning: ui.launchOnExit is only supported with ui: standard -- ignored.");
+                else if (PinFileId(loe.File, "ui.launchOnExit") is string id)
+                    extras.LaunchOnExit = (id, loe.Text, loe.Args, loe.Checked);
+            }
+            foreach (var run in _config.RunAfterInstall)
+            {
+                if (PinFileId(run.File, "runAfterInstall") is string id)
+                    extras.RunAfterInstall.Add((id, run.Args, run.Condition));
+            }
+            foreach (var edit in _config.XmlEdits)
+            {
+                if (PinFileId(edit.File, "xmlEdits") is string id)
+                    extras.XmlEdits.Add((id, edit.Path, edit.Name, edit.Value));
+            }
+            if (!useCustomUi)
+            {
+                if (!string.IsNullOrEmpty(_config.Ui.Banner))
+                    extras.BannerBmp = Path.GetFullPath(_resolver.Resolve(_config.Ui.Banner!));
+                if (!string.IsNullOrEmpty(_config.Ui.Dialog))
+                    extras.DialogBmp = Path.GetFullPath(_resolver.Resolve(_config.Ui.Dialog!));
+            }
+            if (extras.XmlEdits.Any())
+                project.Include(WixExtension.Util);
+            if (extras.HasAny)
+                project.WixSourceGenerated += extras.Apply;
 
             // WixUI_FeatureTree has no dedicated install-directory page; the destination
             // folder is chosen via the Browse button on the feature-selection tree, which
@@ -979,6 +1046,18 @@ namespace AlliePack
         ///   WelcomeDlg → CustomizeDlg (forward), CustomizeDlg → WelcomeDlg (back).
         /// </para>
         /// </summary>
+        private static EnvVarPart ParseEnvVarPart(string? part)
+        {
+            switch ((part ?? "all").ToLowerInvariant())
+            {
+                case "all":   return EnvVarPart.all;
+                case "first": return EnvVarPart.first;
+                case "last":  return EnvVarPart.last;
+                default:
+                    throw new InvalidOperationException($"environment part '{part}' must be all, first or last.");
+            }
+        }
+
         internal static void SuppressLicenseDialog(XDocument doc)
         {
             XNamespace wix = "http://wixtoolset.org/schemas/v4/wxs";
@@ -1664,7 +1743,10 @@ Write-Host ""Done: $msiPath""
                 }
             }
 
-            var shortcut = new FileShortcut(s.Name, folder) { Description = s.Description };
+            // WiX rejects Description="" (WIX0006), so leave it unset when not given.
+            var shortcut = new FileShortcut(s.Name, folder);
+            if (!string.IsNullOrEmpty(s.Description))
+                shortcut.Description = s.Description;
             if (!string.IsNullOrEmpty(s.Icon))
                 shortcut.IconFile = _resolver.Resolve(s.Icon!);
             wixFile.Shortcuts = (wixFile.Shortcuts ?? new FileShortcut[0]).Concat(new[] { shortcut }).ToArray();

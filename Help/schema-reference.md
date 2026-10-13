@@ -21,6 +21,9 @@ features:         # optional
 releaseFlags:     # optional
 defaultActiveFlags: # optional
 signing:          # optional
+ui:               # optional
+runAfterInstall:  # optional
+xmlEdits:         # optional
 wixToolsPath:     # optional
 wix:              # optional
 ```
@@ -40,6 +43,8 @@ wix:              # optional
 | `installDir` | string or conditional | no | `[ProgramFilesFolder]\Manufacturer\Name` | Root install directory |
 | `platform` | string | no | `x86` | `x86`, `x64`, or `arm64` |
 | `licenseFile` | string | no | — | Path to an `.rtf` file. Adds a license agreement dialog to the installer UI. |
+| `icon` | string | no | — | Path to an `.ico` file shown in Add/Remove Programs (`ARPPRODUCTICON`). |
+| `majorUpgrade` | bool | no | `false` | Emit `<MajorUpgrade>` so installing a newer version removes the older one with the same `upgradeCode`. Same-version upgrades are allowed, because MSI ignores the 4th version field when comparing. |
 
 > `ui:` is a **top-level** key, not a `product:` field — see [Installer UI](#installer-ui).
 
@@ -87,6 +92,19 @@ ui:
 |---|---|---|---|
 | `type` | `standard` \| `custom` | `standard` | `standard` uses WiX's built-in dialog set (no extra DLLs). `custom` uses WixSharp's WPF EmbeddedUI (requires `WixSharp.UI.CA.dll` in the artifact). |
 | `allowInstallDirChange` | bool | `true` | Whether the user can choose the install directory. Ignored by `custom`, which always includes its own directory dialog. |
+| `banner` | string | — | `standard` only. 493×58 `.bmp` across the top of the inner pages (`WixUIBannerBmp`). |
+| `dialog` | string | — | `standard` only. 493×312 `.bmp` behind the Welcome and Finish pages (`WixUIDialogBmp`). Keep the right-hand area plain; text is drawn over it. |
+| `launchOnExit` | block | — | `standard` only. Adds a "Launch" checkbox to the Finish page. Fields: `file` (installed path, e.g. `[INSTALLDIR]\\App.exe`), `text`, `args`, `checked` (initial state, default `false`). The app starts in the UI process, as the interactive user. |
+
+```yaml
+ui:
+  type: standard
+  banner: "art\\banner.bmp"
+  dialog: "art\\dialog.bmp"
+  launchOnExit:
+    file: "[INSTALLDIR]\\MyApp.exe"
+    text: "Launch My App when setup exits."
+```
 
 #### Which pages are shown (`type: standard`)
 
@@ -214,8 +232,42 @@ List of `StructureElement` entries defining the installed file tree under `INSTA
 | `name` | string | Variable name |
 | `value` | string or conditional | Value; supports `[INSTALLDIR]` and WiX properties |
 | `scope` | string or conditional | `user` or `machine`. Default inferred from `installScope`. |
+| `part` | string | `all` (default) replaces the variable; `last` appends and `first` prepends, `;`-separated. Use `last` for `PATH` -- `all` would overwrite it. |
 
 Variables are removed on uninstall.
+
+---
+
+## `runAfterInstall:`
+
+Installed programs to start, without waiting, after `InstallFinalize`.
+
+| Field | Type | Notes |
+|---|---|---|
+| `file` | string | Installed path, e.g. `[INSTALLDIR]\\MyApp.exe` |
+| `args` | string | Command line; MSI-formatted, so `[ProductVersion]` etc. expand |
+| `condition` | string | MSI condition. Default `NOT REMOVE~="ALL"` (never on uninstall). `UILevel <> 5` limits it to silent/basic-UI installs. |
+
+---
+
+## `xmlEdits:`
+
+Set values in installed XML files at install time (`util:XmlFile`, `setValue`). Each edit lives in
+the component that installs the file, so it reapplies on repair.
+
+| Field | Type | Notes |
+|---|---|---|
+| `file` | string | Installed path of the XML file, e.g. `[INSTALLDIR]\\settings.xml` |
+| `path` | string | XPath of the node to set; may select an attribute directly (`/Root/@attr`) |
+| `name` | string | Optional attribute name on the element selected by `path` |
+| `value` | string | MSI-formatted; `[INSTALLDIR]` expands at install time (it ends with `\`) |
+
+```yaml
+xmlEdits:
+  - file: "[INSTALLDIR]\\settings.xml"
+    path: "/Config/@dataDir"
+    value: "[INSTALLDIR]data"
+```
 
 ---
 
