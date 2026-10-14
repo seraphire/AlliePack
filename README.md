@@ -14,7 +14,7 @@ AlliePack is a YAML-driven MSI installer builder built on **WixSharp** and **WiX
 - **Flexible versioning** -- literal string, PE file version (FileVersionInfo), or derived from git tags
 - **Dry-run / report mode** to preview MSI contents without building
 - **Platform support**: x86, x64, arm64
-- **Install scope**: perMachine or perUser (use Flags to produce both from one config)
+- **Install scope**: perMachine, perUser or perUserOrMachine (use Flags to produce both from one config)
 - **Registry keys and values**
 - **Environment variables** (set/remove on install/uninstall)
 - **Windows services** (install, start, stop, remove)
@@ -112,7 +112,7 @@ product:
   version: "1.0.0.0"         # See version sourcing options below
   description: "My App installer"
   upgradeCode: "YOUR-GUID"   # Fixed GUID -- changing this breaks upgrades
-  installScope: "perMachine" # perMachine or perUser
+  installScope: "perMachine" # perMachine, perUser or perUserOrMachine
   platform: "x64"            # x86 (default), x64, arm64
   installDir: "[ProgramFiles]\\MyCompany\\MyApp"  # optional custom install path
   licenseFile: "license.rtf" # optional; adds license agreement dialog

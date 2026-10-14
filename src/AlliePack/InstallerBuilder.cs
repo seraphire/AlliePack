@@ -417,7 +417,9 @@ namespace AlliePack
                     DowngradeErrorMessage = "A newer version of [ProductName] is already installed.",
                 };
 
-            project.AttributesDefinition = isMachine ? "Scope=perMachine" : "Scope=perUser";
+            // AttributesDefinition "Scope=..." never reached <Package> under WixSharp_wix4, so
+            // every package defaulted to perMachine; set the typed property instead.
+            project.Scope = ToWixInstallScope(effectiveScope, _options.Strict);
 
             // Suppress "Ambiguous short name" warning as we are explicitly generating them
             // -sw1044: suppress "Ambiguous short name" (AlliePack generates explicit short names)
@@ -2465,8 +2467,8 @@ Write-Host ""Done: $msiPath""
         // -----------------------------------------------------------------------
 
         /// <summary>
-        /// Validates and returns the install scope. Valid values are perUser and perMachine.
-        /// 'both' was removed in ADR-0004 -- use Flags to produce separate per-user and
+        /// Validates and returns the install scope. Valid values are perMachine, perUser and
+        /// perUserOrMachine. 'both' was removed in ADR-0004 -- use Flags to produce separate per-user and
         /// per-machine Packages from a single Package Definition instead.
         /// </summary>
         private static string ComputeEffectiveScope(string rawInstallScope)
@@ -2479,6 +2481,37 @@ Write-Host ""Done: $msiPath""
                     "See docs/adr/0004-remove-both-scope.md for the migration path.");
 
             return rawInstallScope;
+        }
+
+        /// <summary>
+        /// Maps the effective install scope to the WiX Package Scope.
+        /// <para>
+        /// AlliePack's perUser is not yet a true WiX perUser package: the default installDir
+        /// is under Program Files, which WiX perUser (ALLUSERS empty) does not redirect, so a
+        /// non-admin install would fail.  Until that lands, perUser is built as
+        /// perUserOrMachine (ALLUSERS=2, MSIINSTALLPERUSER=1), which redirects Program Files
+        /// to %LOCALAPPDATA%\Programs.  --strict makes that substitution an error.
+        /// </para>
+        /// </summary>
+        internal static InstallScope ToWixInstallScope(string effectiveScope, bool strict)
+        {
+            if (effectiveScope.Equals("perMachine", StringComparison.OrdinalIgnoreCase))
+                return InstallScope.perMachine;
+            if (effectiveScope.Equals("perUserOrMachine", StringComparison.OrdinalIgnoreCase))
+                return InstallScope.perUserOrMachine;
+
+            if (strict)
+                throw new InvalidOperationException(
+                    "installScope: perUser is not yet built as a true WiX perUser package, and " +
+                    "--strict forbids building it as perUserOrMachine instead. " +
+                    "Use installScope: perUserOrMachine, or build without --strict.");
+
+            Console.WriteLine(
+                "Warning: installScope: perUser is built as WiX Scope=perUserOrMachine " +
+                "(Program Files paths redirect to %LOCALAPPDATA%\\Programs for the current user). This will change " +
+                "when true perUser packages are supported; set installScope: perUserOrMachine " +
+                "to keep this behaviour, or pass --strict to fail instead.");
+            return InstallScope.perUserOrMachine;
         }
 
         /// <summary>

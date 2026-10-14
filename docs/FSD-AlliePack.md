@@ -108,7 +108,7 @@ wix:            # optional — raw WiX XML escape hatch
 | `version` | string | yes | — | Four-part: `1.0.0.0` |
 | `description` | string | no | `""` | Control Panel description |
 | `upgradeCode` | GUID string | yes | — | Stable across versions |
-| `installScope` | string or conditional | no | `perMachine` | `perUser` or `perMachine` |
+| `installScope` | string or conditional | no | `perMachine` | `perMachine`, `perUser` or `perUserOrMachine` |
 | `installDir` | string or conditional | no | `[ProgramFilesFolder]\Manufacturer\Name` | Install root path (default shown to user) |
 | `platform` | string | no | `x86` | `x86`, `x64`, `arm64` |
 | `licenseFile` | string | no | — | Path to RTF license file |
@@ -116,7 +116,8 @@ wix:            # optional — raw WiX XML escape hatch
 | Value | Description |
 |---|---|
 | `perMachine` | Machine-wide install (default). Suitable for legacy apps, VB6, shared tooling. |
-| `perUser` | Current-user install only. No elevation required. |
+| `perUserOrMachine` | WiX dual-purpose package (ALLUSERS=2, MSIINSTALLPERUSER=1). Installs for the current user without elevation; Program Files paths redirect to `%LOCALAPPDATA%\Programs`. An admin can force a per-machine install with `MSIINSTALLPERUSER=""`, but shortcuts, environment variables and typed directories stay per-user. |
+| `perUser` | Current-user install. Not yet a true WiX `perUser` package: it is built as `perUserOrMachine` with a build warning. Pass `--strict` to make that an error. |
 
 To produce both a per-user and per-machine Package from a single Package Definition,
 use release Flags with conditional maps (see §5.8).
