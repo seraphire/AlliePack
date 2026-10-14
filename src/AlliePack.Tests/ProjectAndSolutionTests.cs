@@ -12,7 +12,9 @@ namespace AlliePack.Tests
     public sealed class SampleSolutionFixture : IDisposable
     {
         public string SolutionDir { get; }
-        public bool BuildSucceeded { get; }
+
+        /// <summary>Null when the build succeeded; otherwise why it did not.</summary>
+        public string? BuildFailure { get; }
 
         public SampleSolutionFixture()
         {
@@ -20,12 +22,12 @@ namespace AlliePack.Tests
             if (repoRoot == null)
             {
                 SolutionDir = string.Empty;
-                BuildSucceeded = false;
+                BuildFailure = "Repo root not found above " + AppDomain.CurrentDomain.BaseDirectory;
                 return;
             }
 
             SolutionDir = Path.Combine(repoRoot, "test", "assets", "SampleSolution");
-            BuildSucceeded = DotnetBuild(SolutionDir, "Debug");
+            BuildFailure = DotnetBuild(SolutionDir, "Debug");
         }
 
         private static string? FindRepoRoot()
@@ -43,7 +45,7 @@ namespace AlliePack.Tests
             return null;
         }
 
-        private static bool DotnetBuild(string workDir, string configuration)
+        private static string? DotnetBuild(string workDir, string configuration)
         {
             try
             {
@@ -55,11 +57,16 @@ namespace AlliePack.Tests
                     RedirectStandardError  = true,
                     CreateNoWindow         = true,
                 };
-                using var p = Process.Start(psi);
-                p?.WaitForExit();
-                return p?.ExitCode == 0;
+                using var p = Process.Start(psi)!;
+                // Read stderr asynchronously so neither pipe can fill and block the build.
+                var stderr = p.StandardError.ReadToEndAsync();
+                string stdout = p.StandardOutput.ReadToEnd();
+                p.WaitForExit();
+                return p.ExitCode == 0
+                    ? null
+                    : $"dotnet build in {workDir} exited {p.ExitCode}:{Environment.NewLine}{stdout}{stderr.Result}";
             }
-            catch { return false; }
+            catch (Exception ex) { return $"dotnet build in {workDir} could not run: {ex.Message}"; }
         }
 
         public void Dispose() { }
@@ -80,10 +87,13 @@ namespace AlliePack.Tests
                 variables: new Dictionary<string, string>());
         }
 
-        // Skip helper: returns true if the fixture reports a failed build.
-        // Allows individual tests to bail cleanly rather than throwing confusing
-        // exceptions about missing directories.
-        private bool ShouldSkip() => !_fix.BuildSucceeded || string.IsNullOrEmpty(_fix.SolutionDir);
+        // Fails the test when SampleSolution did not build.  These tests used to return
+        // early instead, which made them pass without testing anything.
+        private void RequireSampleBuild()
+        {
+            if (_fix.BuildFailure != null)
+                Assert.Fail("SampleSolution did not build, so this test cannot run." + Environment.NewLine + _fix.BuildFailure);
+        }
 
         // -----------------------------------------------------------------------
         // ResolveProject
@@ -92,7 +102,7 @@ namespace AlliePack.Tests
         [Fact]
         public void ResolveProject_Hello1_FindsAtLeastOneFile()
         {
-            if (ShouldSkip()) return;
+            RequireSampleBuild();
 
             string project = Path.Combine(_fix.SolutionDir, "Hello1", "Hello1.csproj");
             var sr = new SolutionResolver(MakeResolver());
@@ -104,7 +114,7 @@ namespace AlliePack.Tests
         [Fact]
         public void ResolveProject_Hello1_ContainsExeOrDll()
         {
-            if (ShouldSkip()) return;
+            RequireSampleBuild();
 
             string project = Path.Combine(_fix.SolutionDir, "Hello1", "Hello1.csproj");
             var sr = new SolutionResolver(MakeResolver());
@@ -118,7 +128,7 @@ namespace AlliePack.Tests
         [Fact]
         public void ResolveProject_Hello2_FindsAtLeastOneFile()
         {
-            if (ShouldSkip()) return;
+            RequireSampleBuild();
 
             string project = Path.Combine(_fix.SolutionDir, "Hello2", "Hello2.csproj");
             var sr = new SolutionResolver(MakeResolver());
@@ -130,7 +140,7 @@ namespace AlliePack.Tests
         [Fact]
         public void ResolveProject_ExcludeFiles_FiltersPdbFiles()
         {
-            if (ShouldSkip()) return;
+            RequireSampleBuild();
 
             string project = Path.Combine(_fix.SolutionDir, "Hello1", "Hello1.csproj");
             var sr = new SolutionResolver(MakeResolver());
@@ -164,7 +174,7 @@ namespace AlliePack.Tests
         [Fact]
         public void ResolveSolution_BothProjects_FindsFilesFromEach()
         {
-            if (ShouldSkip()) return;
+            RequireSampleBuild();
 
             string sln = Path.Combine(_fix.SolutionDir, "SampleSolution.sln");
             var sr = new SolutionResolver(MakeResolver());
@@ -185,7 +195,7 @@ namespace AlliePack.Tests
         [Fact]
         public void ResolveSolution_ExcludeHello2_DoesNotContainHello2Files()
         {
-            if (ShouldSkip()) return;
+            RequireSampleBuild();
 
             string sln = Path.Combine(_fix.SolutionDir, "SampleSolution.sln");
             var sr = new SolutionResolver(MakeResolver());
@@ -203,7 +213,7 @@ namespace AlliePack.Tests
         [Fact]
         public void ResolveSolution_ExcludeHello2_StillContainsHello1Files()
         {
-            if (ShouldSkip()) return;
+            RequireSampleBuild();
 
             string sln = Path.Combine(_fix.SolutionDir, "SampleSolution.sln");
             var sr = new SolutionResolver(MakeResolver());
