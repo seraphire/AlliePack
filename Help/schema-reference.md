@@ -40,12 +40,20 @@ wix:              # optional
 | `version` | string or version block | yes | — | Four-part (`1.0.0.0`), from PE file, or from git tags. See [version sourcing](#version-sourcing). |
 | `description` | string | no | `""` | Description shown in Add/Remove Programs |
 | `upgradeCode` | GUID string | yes | — | Must stay constant across all versions of your product. Changing this breaks upgrades. |
-| `installScope` | string or conditional | no | `perMachine` | `perUser` or `perMachine` |
-| `installDir` | string or conditional | no | `[ProgramFilesFolder]\Manufacturer\Name` | Root install directory |
+| `installScope` | string or conditional | no | `perMachine` | `perMachine`, `perUser` or `perUserOrMachine`. See [install scope](#install-scope). |
+| `installDir` | string or conditional | no | `[ProgramFilesFolder]\Manufacturer\Name` (`[ProgramFiles64Folder]` on x64/arm64; `[LocalAppDataFolder]\Programs` under `perUser`) | Root install directory. A relative path and the `[ProgramFiles]` token are rooted the same way. |
 | `platform` | string | no | `x86` | `x86`, `x64`, or `arm64` |
 | `licenseFile` | string | no | — | Path to an `.rtf` file. Adds a license agreement dialog to the installer UI. |
 | `icon` | string | no | — | Path to an `.ico` file shown in Add/Remove Programs (`ARPPRODUCTICON`). |
 | `majorUpgrade` | bool | no | `false` | Emit `<MajorUpgrade>` so installing a newer version removes the older one with the same `upgradeCode`. Same-version upgrades are allowed, because MSI ignores the 4th version field when comparing. |
+
+### Install scope
+
+| Value | Behaviour |
+|---|---|
+| `perMachine` | All users. Requires elevation. |
+| `perUser` | Current user only (WiX `perUser`, no ALLUSERS). Never elevates; installs under `%LOCALAPPDATA%\Programs` by default. Content that needs admin rights (per-machine paths such as `[ProgramFiles64Folder]`, `HKLM`/`HKU` registry values, `scope: machine` environment variables, services) is a build warning; `--strict` makes it an error. |
+| `perUserOrMachine` | WiX dual-purpose package (ALLUSERS=2, MSIINSTALLPERUSER=1). Installs for the current user by default, with Program Files redirected to `%LOCALAPPDATA%\Programs`; an admin can force a per-machine install with `MSIINSTALLPERUSER=""`. |
 
 > `ui:` is a **top-level** key, not a `product:` field — see [Installer UI](#installer-ui).
 
@@ -307,7 +315,7 @@ fileAssociations:
 
 | Field | Type | Notes |
 |---|---|---|
-| `root` | string | `HKLM`, `HKCU`, `HKCR`, `HKU` |
+| `root` | string | `HKLM` (default), `HKCU`, `HKCR`, `HKU`. Use `HKCU` in a `perUser` package; `HKLM` and `HKU` need admin rights. |
 | `key` | string | Registry key path under the hive |
 | `name` | string | Value name. Omit for the default value. |
 | `value` | string or conditional | Value data. Supports `[INSTALLDIR]` and WiX properties. |

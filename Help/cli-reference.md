@@ -129,6 +129,14 @@ Preserve the generated `.wxs` WiX source file after building. The file is writte
 AlliePack.exe allie-pack.yaml --keep-wxs
 ```
 
+### `--strict`
+
+Turn warnings about content that builds but will fail at install time into errors. Currently this covers a `perUser` package that contains content needing admin rights: per-machine paths such as `[ProgramFiles64Folder]` or `[CommonAppDataFolder]`, `HKLM`/`HKU` registry values, `scope: machine` environment variables, and services. Without `--strict` each is a warning.
+
+```
+AlliePack.exe allie-pack.yaml --strict
+```
+
 ### `--export-wxs`
 
 Export a portable, self-contained WXS artifact directory instead of building an MSI. Use `-o` / `--output` to specify the export directory; defaults to `<ProductName>-wxs` in the current directory.
