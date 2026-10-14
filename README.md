@@ -58,6 +58,9 @@ Options:
                             then to unconditional values.
       --keep-wxs            Preserve the generated .wxs source file after
                             building. Useful for debugging or CI artifacts.
+      --strict              Fail on warnings for content that builds but will
+                            fail at install time (e.g. HKLM registry or
+                            services in a perUser package).
 ```
 
 ### Examples
@@ -114,7 +117,7 @@ product:
   upgradeCode: "YOUR-GUID"   # Fixed GUID -- changing this breaks upgrades
   installScope: "perMachine" # perMachine, perUser or perUserOrMachine
   platform: "x64"            # x86 (default), x64, arm64
-  installDir: "[ProgramFiles]\\MyCompany\\MyApp"  # optional custom install path
+  installDir: "[ProgramFiles]\\MyCompany\\MyApp"  # optional; perUser roots [ProgramFiles] at %LOCALAPPDATA%\Programs
   licenseFile: "license.rtf" # optional; adds license agreement dialog
 ```
 

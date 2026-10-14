@@ -75,6 +75,7 @@ AlliePack.exe [config] [options]
 | `-v`, `--verbose` | Enable verbose output. |
 | `-D`, `--define KEY=VALUE` | Substitute `$(KEY)` tokens in the YAML before parsing. Repeatable. |
 | `--flag <name>` | Activate a release flag. Selects values from conditional maps. Repeatable. Falls back to `defaultActiveFlags` in config. |
+| `--strict` | Turn warnings about content that builds but will fail at install time into errors. Currently: `perUser` content that needs admin rights (see §5.2). |
 
 ---
 
@@ -109,7 +110,7 @@ wix:            # optional — raw WiX XML escape hatch
 | `description` | string | no | `""` | Control Panel description |
 | `upgradeCode` | GUID string | yes | — | Stable across versions |
 | `installScope` | string or conditional | no | `perMachine` | `perMachine`, `perUser` or `perUserOrMachine` |
-| `installDir` | string or conditional | no | `[ProgramFilesFolder]\Manufacturer\Name` | Install root path (default shown to user) |
+| `installDir` | string or conditional | no | `[ProgramFilesFolder]\Manufacturer\Name` (`[ProgramFiles64Folder]` on x64/arm64; `[LocalAppDataFolder]\Programs` under `perUser`) | Install root path (default shown to user). A relative path and the `[ProgramFiles]` token are rooted the same way. |
 | `platform` | string | no | `x86` | `x86`, `x64`, `arm64` |
 | `licenseFile` | string | no | — | Path to RTF license file |
 
@@ -117,7 +118,7 @@ wix:            # optional — raw WiX XML escape hatch
 |---|---|
 | `perMachine` | Machine-wide install (default). Suitable for legacy apps, VB6, shared tooling. |
 | `perUserOrMachine` | WiX dual-purpose package (ALLUSERS=2, MSIINSTALLPERUSER=1). Installs for the current user without elevation; Program Files paths redirect to `%LOCALAPPDATA%\Programs`. An admin can force a per-machine install with `MSIINSTALLPERUSER=""`, but shortcuts, environment variables and typed directories stay per-user. |
-| `perUser` | Current-user install. Not yet a true WiX `perUser` package: it is built as `perUserOrMachine` with a build warning. Pass `--strict` to make that an error. |
+| `perUser` | WiX `perUser` package (ALLUSERS not set). Installs for the current user only, without elevation; an admin cannot force a per-machine install. The default `installDir` is `%LOCALAPPDATA%\Programs\<Manufacturer>\<Name>`. Content that needs admin rights (per-machine paths such as `[ProgramFiles64Folder]` or `[CommonAppDataFolder]`, HKLM/HKU registry values, `scope: machine` environment variables, services) is a build warning, since a non-admin install fails; `--strict` makes it an error. Before this, `perUser` was built as `perUserOrMachine`. |
 
 To produce both a per-user and per-machine Package from a single Package Definition,
 use release Flags with conditional maps (see §5.8).

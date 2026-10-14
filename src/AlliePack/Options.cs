@@ -50,8 +50,9 @@ namespace AlliePack
         public bool ExportWxs { get; set; }
 
         [Option("strict", Required = false,
-            HelpText = "Fail the build instead of substituting a fallback behaviour. " +
-                       "Currently: installScope: perUser, which is otherwise built as WiX perUserOrMachine.")]
+            HelpText = "Turn warnings about things that build but will fail at install time into errors. " +
+                       "Currently: installScope: perUser content that needs admin rights " +
+                       "(per-machine paths, HKLM/HKU registry, machine environment variables, services).")]
         public bool Strict { get; set; }
 
         [Option("debug", Required = false,

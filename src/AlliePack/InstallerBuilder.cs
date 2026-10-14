@@ -161,31 +161,17 @@ namespace AlliePack
             bool isMachine = effectiveScope.Equals("perMachine", StringComparison.OrdinalIgnoreCase);
 
             // --- installDir resolution ---
-            string resolvedInstallDir = _config.Product.InstallDir?.Resolve(_activeFlags) ?? string.Empty;
-            string installPath;
-            if (!string.IsNullOrEmpty(resolvedInstallDir))
-                installPath = resolvedInstallDir;
-            else
-                installPath = _resolver.Tokens.Substitute(_config.Product.Manufacturer)
-                            + "\\" + _resolver.Tokens.Substitute(_config.Product.Name);
-
-            installPath = installPath.Replace('/', '\\');
-            
             bool is64 = _config.Product.Platform.Equals("x64", StringComparison.OrdinalIgnoreCase) || 
                         _config.Product.Platform.Equals("arm64", StringComparison.OrdinalIgnoreCase);
+            bool isPerUser = effectiveScope.Equals("perUser", StringComparison.OrdinalIgnoreCase);
 
-            if (installPath.StartsWith("[ProgramFiles]\\", StringComparison.OrdinalIgnoreCase))
-            {
-                string pfFolder = is64 ? "[ProgramFiles64Folder]" : "[ProgramFilesFolder]";
-                installPath = pfFolder + "\\" + installPath.Substring("[ProgramFiles]\\".Length);
-            }
+            string resolvedInstallDir = _config.Product.InstallDir?.Resolve(_activeFlags) ?? string.Empty;
+            string defaultSubPath = _resolver.Tokens.Substitute(_config.Product.Manufacturer)
+                                  + "\\" + _resolver.Tokens.Substitute(_config.Product.Name);
+            string installPath = ResolveInstallPath(resolvedInstallDir, defaultSubPath, isPerUser, is64);
 
-            if (!installPath.Contains("[") && !Path.IsPathRooted(installPath))
-            {
-                // Use the platform-appropriate Program Files folder as the default root.
-                string defaultPf = is64 ? "[ProgramFiles64Folder]" : "[ProgramFilesFolder]";
-                installPath = Path.Combine(defaultPf, installPath);
-            }
+            if (isPerUser)
+                ReportPerUserAdminRequirements(FindPerUserAdminRequirements(installPath), _options.Strict);
             
             Dir? rootDir = null;
             Dir? targetDir = null;
@@ -419,7 +405,7 @@ namespace AlliePack
 
             // AttributesDefinition "Scope=..." never reached <Package> under WixSharp_wix4, so
             // every package defaulted to perMachine; set the typed property instead.
-            project.Scope = ToWixInstallScope(effectiveScope, _options.Strict);
+            project.Scope = ToWixInstallScope(effectiveScope);
 
             // Suppress "Ambiguous short name" warning as we are explicitly generating them
             // -sw1044: suppress "Ambiguous short name" (AlliePack generates explicit short names)
@@ -2485,33 +2471,127 @@ Write-Host ""Done: $msiPath""
 
         /// <summary>
         /// Maps the effective install scope to the WiX Package Scope.
-        /// <para>
-        /// AlliePack's perUser is not yet a true WiX perUser package: the default installDir
-        /// is under Program Files, which WiX perUser (ALLUSERS empty) does not redirect, so a
-        /// non-admin install would fail.  Until that lands, perUser is built as
-        /// perUserOrMachine (ALLUSERS=2, MSIINSTALLPERUSER=1), which redirects Program Files
-        /// to %LOCALAPPDATA%\Programs.  --strict makes that substitution an error.
-        /// </para>
         /// </summary>
-        internal static InstallScope ToWixInstallScope(string effectiveScope, bool strict)
+        internal static InstallScope ToWixInstallScope(string effectiveScope)
         {
             if (effectiveScope.Equals("perMachine", StringComparison.OrdinalIgnoreCase))
                 return InstallScope.perMachine;
             if (effectiveScope.Equals("perUserOrMachine", StringComparison.OrdinalIgnoreCase))
                 return InstallScope.perUserOrMachine;
+            return InstallScope.perUser;
+        }
 
+        /// <summary>
+        /// Resolves product.installDir (or the Manufacturer\Name default) to a rooted path.
+        /// <para>
+        /// A relative path, and AlliePack's own <c>[ProgramFiles]</c> token, are rooted at
+        /// the platform's Program Files folder -- except under perUser, where they are rooted
+        /// at <c>[LocalAppDataFolder]\Programs</c>.  A WiX perUser package leaves ALLUSERS
+        /// empty, so MSI does not redirect Program Files, and a non-admin install there fails.
+        /// Explicit WiX folder properties pass through unchanged.
+        /// </para>
+        /// </summary>
+        internal static string ResolveInstallPath(string configured, string defaultSubPath, bool perUser, bool is64)
+        {
+            string path = (string.IsNullOrEmpty(configured) ? defaultSubPath : configured).Replace('/', '\\');
+            string root = perUser ? "[LocalAppDataFolder]\\Programs"
+                        : is64    ? "[ProgramFiles64Folder]"
+                        :           "[ProgramFilesFolder]";
+
+            if (path.StartsWith("[ProgramFiles]\\", StringComparison.OrdinalIgnoreCase))
+                path = root + "\\" + path.Substring("[ProgramFiles]\\".Length);
+
+            if (!path.Contains("[") && !Path.IsPathRooted(path))
+                path = Path.Combine(root, path);
+
+            return path;
+        }
+
+        /// <summary>
+        /// WiX folder properties a non-admin cannot write to.  A perUser package installs
+        /// without elevation, so files placed under these fail at install time.
+        /// </summary>
+        private static readonly string[] MachineOnlyFolders =
+        {
+            "[ProgramFilesFolder]", "[ProgramFiles64Folder]", "[ProgramFiles6432Folder]",
+            "[CommonFilesFolder]", "[CommonFiles64Folder]", "[CommonFiles6432Folder]",
+            "[CommonAppDataFolder]", "[CommonDesktopFolder]", "[CommonProgramMenuFolder]",
+            "[CommonStartupFolder]", "[CommonStartMenuFolder]", "[CommonTemplatesFolder]",
+            "[WindowsFolder]", "[SystemFolder]", "[System64Folder]", "[System16Folder]",
+            "[FontsFolder]", "[WindowsVolume]",
+        };
+
+        internal static bool IsMachineOnlyPath(string path)
+        {
+            string p = path.Trim().Replace('/', '\\');
+            return MachineOnlyFolders.Any(f =>
+                p.Equals(f, StringComparison.OrdinalIgnoreCase) ||
+                p.StartsWith(f + "\\", StringComparison.OrdinalIgnoreCase));
+        }
+
+        /// <summary>
+        /// Lists what in a perUser package needs admin rights: machine-only install paths,
+        /// HKLM / HKU registry values, machine environment variables and Windows services.
+        /// They build fine but fail when a non-admin installs the package.
+        /// </summary>
+        internal List<string> FindPerUserAdminRequirements(string installPath)
+        {
+            var issues = new List<string>();
+
+            void CheckPath(string what, string? path)
+            {
+                if (!string.IsNullOrEmpty(path) && IsMachineOnlyPath(path!))
+                    issues.Add($"{what} '{path}' is a per-machine location");
+            }
+
+            void CheckContent(string where, List<RegistryConfig> registry, List<EnvVarConfig> environment,
+                              List<ServiceConfig> services, List<FileGroupConfig> groups, List<ShortcutInfo> shortcuts)
+            {
+                foreach (var reg in registry)
+                {
+                    var hive = ParseRegistryHive(reg.Root);
+                    if (hive == RegistryHive.LocalMachine || hive == RegistryHive.Users)
+                        issues.Add($"{where}registry value '{reg.Root}\\{reg.Key}' is outside HKCU");
+                }
+                foreach (var ev in environment)
+                    if (ev.Scope != null && ev.Scope.Resolve(_activeFlags).Equals("machine", StringComparison.OrdinalIgnoreCase))
+                        issues.Add($"{where}environment variable '{ev.Name}' has scope: machine");
+                foreach (var svc in services)
+                    issues.Add($"{where}service '{svc.Name}' installs a Windows service");
+                foreach (var g in groups)
+                    CheckPath($"{where}group '{g.Id}' destination", g.DestinationDir);
+                foreach (var sc in shortcuts)
+                    CheckPath($"{where}shortcut '{sc.Name}' folder", sc.Folder);
+            }
+
+            CheckPath("installDir", installPath);
+            foreach (var d in _config.Directories)
+                if (string.IsNullOrEmpty(d.Type))
+                    CheckPath($"directory '{d.Id}'", d.Path.Resolve(_activeFlags));
+            CheckContent("", _config.Registry, _config.Environment, _config.Services, _config.Groups, _config.Shortcuts);
+            foreach (var fc in _config.Features)
+                CheckContent($"feature '{fc.Id}': ", fc.Registry, fc.Environment, fc.Services, fc.Groups, fc.Shortcuts);
+
+            return issues;
+        }
+
+        /// <summary>
+        /// Warns about each perUser admin requirement, or fails the build under --strict.
+        /// </summary>
+        internal static void ReportPerUserAdminRequirements(List<string> issues, bool strict)
+        {
+            if (issues.Count == 0) return;
+
+            const string why = "a perUser package installs without elevation, so a non-admin install will fail";
             if (strict)
                 throw new InvalidOperationException(
-                    "installScope: perUser is not yet built as a true WiX perUser package, and " +
-                    "--strict forbids building it as perUserOrMachine instead. " +
-                    "Use installScope: perUserOrMachine, or build without --strict.");
+                    "installScope: perUser, but the package needs admin rights (" + why + "), and --strict " +
+                    "makes that an error:" + Environment.NewLine + "  " +
+                    string.Join(Environment.NewLine + "  ", issues) + Environment.NewLine +
+                    "Use installScope: perUserOrMachine or perMachine, or move these to per-user locations.");
 
-            Console.WriteLine(
-                "Warning: installScope: perUser is built as WiX Scope=perUserOrMachine " +
-                "(Program Files paths redirect to %LOCALAPPDATA%\\Programs for the current user). This will change " +
-                "when true perUser packages are supported; set installScope: perUserOrMachine " +
-                "to keep this behaviour, or pass --strict to fail instead.");
-            return InstallScope.perUserOrMachine;
+            foreach (var issue in issues)
+                Console.WriteLine($"Warning: installScope: perUser: {issue}; {why}.");
         }
 
         /// <summary>
