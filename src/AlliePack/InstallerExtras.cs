@@ -7,7 +7,7 @@ namespace AlliePack
     /// <summary>
     /// WXS post-processing for features WixSharp has no first-class model for:
     /// the Finish-page launch checkbox, programs run after install, install-time XML
-    /// edits, and standard-UI artwork.  Actions reference installed files by File Id;
+    /// edits, file associations, and standard-UI artwork.  Actions reference installed files by File Id;
     /// <see cref="InstallerBuilder"/> pins those Ids before the source is generated.
     /// </summary>
     internal class InstallerExtras
@@ -18,11 +18,12 @@ namespace AlliePack
         public (string FileId, string Text, string? Args, bool Checked)? LaunchOnExit { get; set; }
         public List<(string FileId, string? Args, string Condition)> RunAfterInstall { get; } = new();
         public List<(string FileId, string Path, string? Name, string Value)> XmlEdits { get; } = new();
+        public List<FileAssociation> FileAssociations { get; } = new();
         public string? BannerBmp { get; set; }
         public string? DialogBmp { get; set; }
 
         public bool HasAny =>
-            LaunchOnExit != null || RunAfterInstall.Any() || XmlEdits.Any()
+            LaunchOnExit != null || RunAfterInstall.Any() || XmlEdits.Any() || FileAssociations.Any()
             || BannerBmp != null || DialogBmp != null;
 
         public void Apply(XDocument doc)
@@ -76,8 +77,7 @@ namespace AlliePack
             for (int i = 0; i < XmlEdits.Count; i++)
             {
                 var (fileId, path, name, value) = XmlEdits[i];
-                var file = doc.Descendants(Wix + "File")
-                    .FirstOrDefault(f => (string?)f.Attribute("Id") == fileId);
+                var file = FindFile(doc, fileId);
                 // The edit belongs to the component that installs the file, so it is
                 // applied whenever that file is (re)installed.
                 var component = file?.Parent;
@@ -94,7 +94,42 @@ namespace AlliePack
                     xmlFile.Add(new XAttribute("Name", name));
                 component.Add(xmlFile);
             }
+
+            foreach (var assoc in FileAssociations)
+            {
+                var component = FindFile(doc, assoc.FileId)?.Parent;
+                if (component == null) continue;
+
+                // Non-advertised: WiX writes these as Registry rows on the file's
+                // component.  Icon is the Id of an installed file with an icon resource.
+                var extension = new XElement(Wix + "Extension",
+                    new XAttribute("Id", assoc.Extension));
+                if (!string.IsNullOrEmpty(assoc.ContentType))
+                    extension.Add(new XAttribute("ContentType", assoc.ContentType));
+                foreach (var verb in assoc.Verbs)
+                {
+                    var v = new XElement(Wix + "Verb",
+                        new XAttribute("Id", verb.Id),
+                        new XAttribute("TargetFile", assoc.FileId),
+                        new XAttribute("Argument", verb.Args));
+                    if (!string.IsNullOrEmpty(verb.Label))
+                        v.Add(new XAttribute("Command", verb.Label));
+                    extension.Add(v);
+                }
+
+                var progId = new XElement(Wix + "ProgId",
+                    new XAttribute("Id", assoc.ProgId),
+                    new XAttribute("Icon", assoc.IconFileId),
+                    new XAttribute("IconIndex", assoc.IconIndex));
+                if (!string.IsNullOrEmpty(assoc.Description))
+                    progId.Add(new XAttribute("Description", assoc.Description));
+                progId.Add(extension);
+                component.Add(progId);
+            }
         }
+
+        static XElement? FindFile(XDocument doc, string fileId) =>
+            doc.Descendants(Wix + "File").FirstOrDefault(f => (string?)f.Attribute("Id") == fileId);
 
         static XElement ExeAction(string id, string fileId, string? args)
         {
@@ -126,5 +161,18 @@ namespace AlliePack
             }
             return el;
         }
+    }
+
+    /// <summary>A file association with its files already pinned to File Ids.</summary>
+    internal class FileAssociation
+    {
+        public string Extension { get; set; } = string.Empty;
+        public string ProgId { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public string FileId { get; set; } = string.Empty;
+        public string IconFileId { get; set; } = string.Empty;
+        public int IconIndex { get; set; }
+        public string? ContentType { get; set; }
+        public List<FileAssociationVerbConfig> Verbs { get; set; } = new();
     }
 }

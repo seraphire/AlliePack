@@ -596,6 +596,27 @@ namespace AlliePack
                 if (PinFileId(edit.File, "xmlEdits") is string id)
                     extras.XmlEdits.Add((id, edit.Path, edit.Name, edit.Value));
             }
+            ValidateFileAssociations(_config.FileAssociations);
+            foreach (var fa in _config.FileAssociations)
+            {
+                string label = $"fileAssociations '{fa.Extension}'";
+                if (!(PinFileId(fa.File, label) is string fileId)) continue;
+                string? iconId = string.IsNullOrEmpty(fa.Icon) ? fileId : PinFileId(fa.Icon!, label + " icon");
+                if (iconId == null) continue;
+                extras.FileAssociations.Add(new FileAssociation
+                {
+                    Extension   = fa.Extension,
+                    ProgId      = string.IsNullOrEmpty(fa.ProgId) ? fa.Extension : fa.ProgId!,
+                    Description = fa.Description,
+                    FileId      = fileId,
+                    IconFileId  = iconId,
+                    IconIndex   = fa.IconIndex,
+                    ContentType = fa.ContentType,
+                    Verbs       = fa.Verbs.Any()
+                        ? fa.Verbs
+                        : new List<FileAssociationVerbConfig> { new FileAssociationVerbConfig { Label = "&Open" } },
+                });
+            }
             if (!useCustomUi)
             {
                 if (!string.IsNullOrEmpty(_config.Ui.Banner))
@@ -1690,6 +1711,28 @@ Write-Host ""Done: $msiPath""
             return si;
         }
 
+        internal static void ValidateFileAssociations(List<FileAssociationConfig> associations)
+        {
+            var extensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var progIds    = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var fa in associations)
+            {
+                if (string.IsNullOrWhiteSpace(fa.Extension) || fa.Extension.StartsWith("."))
+                    throw new InvalidOperationException(
+                        $"fileAssociations: extension '{fa.Extension}' must be given without the leading dot.");
+                if (string.IsNullOrWhiteSpace(fa.File))
+                    throw new InvalidOperationException(
+                        $"fileAssociations '{fa.Extension}': file: is required.");
+                if (!extensions.Add(fa.Extension))
+                    throw new InvalidOperationException(
+                        $"fileAssociations: extension '{fa.Extension}' is declared more than once.");
+                string progId = string.IsNullOrEmpty(fa.ProgId) ? fa.Extension : fa.ProgId!;
+                if (!progIds.Add(progId))
+                    throw new InvalidOperationException(
+                        $"fileAssociations: progId '{progId}' is declared more than once.");
+            }
+        }
+
         private void AttachShortcut(
             ShortcutInfo s,
             string installPath,
@@ -2673,6 +2716,20 @@ Write-Host ""Done: $msiPath""
                     Console.WriteLine($"  [{reg.Root}\\{reg.Key}]{bitNote}");
                     string displayName = string.IsNullOrEmpty(reg.Name) ? "(Default)" : reg.Name;
                     Console.WriteLine($"    {displayName} ({reg.Type}) = {val}");
+                }
+            }
+
+            if (_config.FileAssociations.Any())
+            {
+                Console.WriteLine("File Associations:");
+                foreach (var fa in _config.FileAssociations)
+                {
+                    string progId = string.IsNullOrEmpty(fa.ProgId) ? fa.Extension : fa.ProgId!;
+                    Console.WriteLine($"  .{fa.Extension} -> {progId} -> {fa.File}");
+                    foreach (var verb in fa.Verbs)
+                        Console.WriteLine($"    {verb.Id}: {verb.Args}");
+                    if (!fa.Verbs.Any())
+                        Console.WriteLine("    open: \"%1\" (default)");
                 }
             }
 

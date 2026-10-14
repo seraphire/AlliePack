@@ -1,0 +1,33 @@
+product:
+  name: "FileAssociationTest"
+  manufacturer: "AlliePack"
+  version: "1.0.0.0"
+  upgradeCode: "a1b2c3d4-0001-0002-0003-000000000017"
+  platform: "x64"
+  installScope: perMachine
+
+aliases:
+  bin: "."
+
+structure:
+  - source: "bin:app.exe"
+
+fileAssociations:
+  # Minimal: .apt1 -> ProgId "apt1", one "&Open" verb passing "%1", icon from app.exe
+  - extension: apt1
+    description: "AlliePack Test Document"
+    file: "[INSTALLDIR]\\app.exe"
+
+  # Explicit ProgId, MIME type, and two verbs
+  - extension: apt2
+    progId: AlliePack.Test.Project
+    description: "AlliePack Test Project"
+    file: "[INSTALLDIR]\\app.exe"
+    contentType: application/x-apt2
+    verbs:
+      - id: open
+        label: "&Open"
+        args: "\"%1\""
+      - id: edit
+        label: "&Edit"
+        args: "/edit \"%1\""

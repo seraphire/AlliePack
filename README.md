@@ -18,6 +18,7 @@ AlliePack is a YAML-driven MSI installer builder built on **WixSharp** and **WiX
 - **Registry keys and values**
 - **Environment variables** (set/remove on install/uninstall)
 - **Windows services** (install, start, stop, remove)
+- **File associations** -- register an extension to an installed program, with verbs and icon
 - **Code signing** -- sign the MSI and packaged files with `signtool.exe`; supports cert store (thumbprint), PFX, Azure Trusted Signing, or any custom signing tool
 - **Release flags** for conditional configuration (perUser vs. perMachine builds, etc.)
 
@@ -280,6 +281,30 @@ registry:
     win64: true       # optional; defaults to platform setting
 ```
 
+### `fileAssociations`
+
+Registers a file extension so it opens in an installed program.  The ProgId lives in the
+component that installs `file`, so uninstall removes it.  Not advertised: plain registry
+entries under `HKCR` (per-machine or per-user `Software\Classes`, by install scope).
+
+```yaml
+fileAssociations:
+  - extension: "myx"                    # no leading dot
+    progId: "MyApp.Document"            # optional; defaults to the extension
+    description: "MyApp Document"
+    file: "[INSTALLDIR]\MyApp.exe"      # installed file that opens it
+    icon: "[INSTALLDIR]\MyApp.exe"      # optional installed file; defaults to file
+    iconIndex: 0                        # optional
+    contentType: "application/x-myx"    # optional MIME type
+    verbs:                              # optional; default: open / "&Open" / "\"%1\""
+      - id: open
+        label: "&Open"
+        args: "\"%1\""
+      - id: edit
+        label: "&Edit"
+        args: "/edit \"%1\""
+```
+
 ### `services`
 
 ```yaml
@@ -436,6 +461,7 @@ src/AlliePack/
 - [x] Registry keys and values
 - [x] Environment variables
 - [x] Windows services
+- [x] File associations
 - [x] Named directories and file groups (install outside INSTALLDIR)
 - [x] Release flags and conditional inclusion (`--flag PerUser` / `--flag PerMachine`)
 - [x] `condition: notExists` -- install config files on first install only

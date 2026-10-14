@@ -24,6 +24,7 @@ signing:          # optional
 ui:               # optional
 runAfterInstall:  # optional
 xmlEdits:         # optional
+fileAssociations: # optional
 wixToolsPath:     # optional
 wix:              # optional
 ```
@@ -267,6 +268,37 @@ xmlEdits:
   - file: "[INSTALLDIR]\\settings.xml"
     path: "/Config/@dataDir"
     value: "[INSTALLDIR]data"
+```
+
+---
+
+## `fileAssociations:`
+
+Register a file extension to an installed program.  Emits a non-advertised WiX
+`ProgId` / `Extension` / `Verb` in the component that installs `file`, so the keys follow
+that file's feature and are removed on uninstall.  `HKCR` maps to `HKLM\Software\Classes`
+(perMachine) or `HKCU\Software\Classes` (perUser).
+
+| Field | Type | Notes |
+|---|---|---|
+| `extension` | string | Required. Without the leading dot, e.g. `myx`. Must be unique. |
+| `progId` | string | Default: the extension. Must be unique. |
+| `description` | string | Shown by Explorer as the file type name. |
+| `file` | string | Required. Installed file that opens the extension, e.g. `[INSTALLDIR]\MyApp.exe` |
+| `icon` | string | Installed file holding the icon resource (exe, dll or `.ico`). Default: `file`. |
+| `iconIndex` | int | Icon resource index. Default `0`. |
+| `contentType` | string | Optional MIME type, e.g. `application/x-myx` |
+| `verbs` | list | Default: one verb `open`, label `&Open`, args `"%1"` (quoted). |
+| `verbs[].id` | string | Verb key, e.g. `open`, `edit`, `print`. Default `open`. |
+| `verbs[].label` | string | Context-menu text; `&` marks the access key. |
+| `verbs[].args` | string | Command-line arguments; MSI-formatted. Default `"%1"` (quoted). |
+
+```yaml
+fileAssociations:
+  - extension: myx
+    progId: MyApp.Document
+    description: "MyApp Document"
+    file: "[INSTALLDIR]\MyApp.exe"
 ```
 
 ---

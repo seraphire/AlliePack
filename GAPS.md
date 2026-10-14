@@ -22,6 +22,7 @@ phase is implemented.
 | GAP-11 | `destinationDir` accepts bracketed WiX paths, incl. `[INSTALLDIR]` | Unphased | **Closed** | LeadView (ini + icon must sit beside the exe) |
 | GAP-12 | Component flags (`permanent`, `condition`) on `structure:` entries | Unphased | **Open** | LeadView (deferred; workaround below) |
 | GAP-13 | No MSI-backed integration test; MsiInspector is not wired to AlliePack.Tests | Unphased | **Closed** | PR 47 review (GAP-11 coverage) |
+| GAP-14 | File associations (extension -> ProgId -> verbs, icon) | Phase 1 | **Closed** | gmStudio (`.gmproj` opens in gmStudio.exe) |
 
 ---
 
@@ -462,3 +463,45 @@ This is the argument for MSI-level coverage in miniature: the WXS carried
 `NeverOverwrite="yes" Permanent="yes"` and the MSI really did have component
 attributes 144, but the tool reading it said 0.  Neither the object-graph tests
 nor the WXS tests could have surfaced that.
+
+---
+
+### GAP-14 -- File associations
+
+**Problem:** The original gmStudio installer registered `.gmproj` so that
+double-clicking a project opens it in gmStudio (`HKCR\.gmproj` = `gmproj`,
+`gmproj\shell\open\command` = `"...\gmStudio.exe" "%1"`, plus a DefaultIcon).
+AlliePack had no way to express this short of hand-written `registry:` entries
+or a raw `wix:` fragment.
+
+**Implemented:** a top-level `fileAssociations:` block.  Each entry emits a WiX
+`ProgId` / `Extension` / `Verb` inside the component that installs `file:`, so
+the keys follow that file's feature and are removed on uninstall.
+
+```yaml
+fileAssociations:
+  - extension: gmproj               # no leading dot
+    progId: gmproj                  # default: the extension
+    description: "gmStudio Project"
+    file: "[INSTALLDIR]\gmStudio.exe"
+    # icon: "[INSTALLDIR]\doc.ico"  # installed file; default: file
+    # iconIndex: 0
+    # contentType: application/x-gmproj
+    # verbs:                        # default: open, "&Open", "\"%1\""
+```
+
+**Not advertised.**  The original installer advertised its ProgId, which routes
+every double-click through Windows Installer's feature check (and repair).
+AlliePack writes plain registry rows instead: no surprise repair prompts, and
+the keys are ordinary values that are easy to inspect.  Consequence: `icon:`
+must be an *installed* file (an exe/dll with an icon resource, or an `.ico`), not
+a build-machine path.  `HKCR` rows land in `HKLM\Software\Classes` for a
+per-machine install and `HKCU\Software\Classes` for a per-user one.
+
+**Verified (2026-10-14):** `FileAssociationTests` compiles an MSI and checks the
+Registry table rows and their component.  A per-user install of a test package
+created the keys, launching a `.aptx` file through the shell started the
+installed exe with the quoted path, and uninstall removed the keys.
+
+**Not done:** advertised associations (`advertise: true`), feature-level
+`fileAssociations:` (not needed -- the association follows `file:`'s feature).

@@ -91,7 +91,7 @@ WiX extension inventory. Items marked **[Roadmap]** are already documented in RO
 | COM self-registration | Fallback `regsvr32`-style registration; WiX `File/@SelfRegCost` |
 | APPID registration | Register COM application identity; WiX `AppId` element |
 | .NET assembly GAC install | Install strongly-named assemblies to GAC; WiX `File/@Assembly` |
-| File association | Register file extensions with verbs (open, edit); WiX `Extension`/`Verb`/`MIME` |
+| File association **[Done]** | Register file extensions with verbs (open, edit); WiX `Extension`/`Verb`/`MIME`. Implemented as `fileAssociations:` (non-advertised); see GAP-14 in [../GAPS.md](../GAPS.md) |
 | VBScript/JScript custom actions **[Roadmap]** | Inline script-based custom actions; WiX `CustomAction` with `Script` |
 
 ---
@@ -233,7 +233,7 @@ WiX extensions, and would cover real-world use cases that users currently work a
 | Medium | NTFS permissions (`PermissionEx`) | `WixToolset.Util.wixext` |
 | Medium | Windows Features on/off | `WixToolset.Util.wixext` |
 | Medium | Event log source registration | `WixToolset.Util.wixext` |
-| Medium | File association (ext/verb) | WiX core schema |
+| Medium | ~~File association (ext/verb)~~ **Done** (`fileAssociations:`) | WiX core schema |
 | Medium | AppSearch / launch conditions | WiX core schema |
 | Medium | INI file editing | WiX core schema |
 | Medium | COM registration extraction (DLL/OCX/TLB harvest) | `wix harvest` / custom tool; **GM priority for legacy VB6** |

@@ -73,6 +73,24 @@ environment:
     scope: user
 ```
 
+### File Associations
+
+Register a file extension to an installed program (non-advertised ProgId / Extension / Verb).
+
+```yaml
+fileAssociations:
+  - extension: myx                  # no leading dot
+    progId: MyApp.Document          # default: the extension
+    description: "MyApp Document"
+    file: "[INSTALLDIR]\MyApp.exe"
+    verbs:                          # default: one open verb passing "%1"
+      - id: open
+        label: "&Open"
+        args: "\"%1\""
+```
+
+Done (GAP-14).  Advertised associations are not supported.
+
 ### Empty Directory Creation
 
 Create directories in the install tree that start empty. Useful for drop-in locations (tools, plugins, user data) that the application or user populates after install.

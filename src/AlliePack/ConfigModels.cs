@@ -420,6 +420,10 @@ namespace AlliePack
         // Install-time edits to installed XML files (util:XmlFile setValue).
         [YamlMember(Alias = "xmlEdits")]
         public List<XmlEditConfig> XmlEdits { get; set; } = new();
+
+        // File extensions registered to an installed file (ProgId/Extension/Verb).
+        [YamlMember(Alias = "fileAssociations")]
+        public List<FileAssociationConfig> FileAssociations { get; set; } = new();
     }
 
     // -----------------------------------------------------------------------
@@ -457,6 +461,62 @@ namespace AlliePack
         // New value; MSI-formatted, so [INSTALLDIR] etc. expand at install time.
         [YamlMember(Alias = "value")]
         public string Value { get; set; } = string.Empty;
+    }
+
+    // -----------------------------------------------------------------------
+    // File associations
+    //
+    // Non-advertised: written as plain registry entries under HKCR (HKLM or
+    // HKCU Software\Classes depending on scope) by the component that installs
+    // file:, so they follow that file's feature and are removed on uninstall.
+    // -----------------------------------------------------------------------
+
+    public class FileAssociationConfig
+    {
+        // Extension without the leading dot, e.g. "gmproj"
+        [YamlMember(Alias = "extension")]
+        public string Extension { get; set; } = string.Empty;
+
+        // ProgId the extension points at.  Default: the extension.
+        [YamlMember(Alias = "progId")]
+        public string? ProgId { get; set; }
+
+        [YamlMember(Alias = "description")]
+        public string? Description { get; set; }
+
+        // Installed file that opens the extension, e.g. [INSTALLDIR]\\MyApp.exe
+        [YamlMember(Alias = "file")]
+        public string File { get; set; } = string.Empty;
+
+        // Installed file holding the icon resource.  Default: file.
+        [YamlMember(Alias = "icon")]
+        public string? Icon { get; set; }
+
+        [YamlMember(Alias = "iconIndex")]
+        public int IconIndex { get; set; }
+
+        // Optional MIME type, e.g. application/x-myapp
+        [YamlMember(Alias = "contentType")]
+        public string? ContentType { get; set; }
+
+        // Shell verbs.  Default: a single open verb ("&Open", "%1" quoted).
+        [YamlMember(Alias = "verbs")]
+        public List<FileAssociationVerbConfig> Verbs { get; set; } = new();
+    }
+
+    public class FileAssociationVerbConfig
+    {
+        // Verb key name, e.g. open, edit, print
+        [YamlMember(Alias = "id")]
+        public string Id { get; set; } = "open";
+
+        // Context-menu text.  Default: none (Explorer shows the verb id).
+        [YamlMember(Alias = "label")]
+        public string? Label { get; set; }
+
+        // Command-line arguments; MSI-formatted.
+        [YamlMember(Alias = "args")]
+        public string Args { get; set; } = "\"%1\"";
     }
 
     // -----------------------------------------------------------------------
