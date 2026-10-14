@@ -161,31 +161,17 @@ namespace AlliePack
             bool isMachine = effectiveScope.Equals("perMachine", StringComparison.OrdinalIgnoreCase);
 
             // --- installDir resolution ---
-            string resolvedInstallDir = _config.Product.InstallDir?.Resolve(_activeFlags) ?? string.Empty;
-            string installPath;
-            if (!string.IsNullOrEmpty(resolvedInstallDir))
-                installPath = resolvedInstallDir;
-            else
-                installPath = _resolver.Tokens.Substitute(_config.Product.Manufacturer)
-                            + "\\" + _resolver.Tokens.Substitute(_config.Product.Name);
-
-            installPath = installPath.Replace('/', '\\');
-            
             bool is64 = _config.Product.Platform.Equals("x64", StringComparison.OrdinalIgnoreCase) || 
                         _config.Product.Platform.Equals("arm64", StringComparison.OrdinalIgnoreCase);
+            bool isPerUser = effectiveScope.Equals("perUser", StringComparison.OrdinalIgnoreCase);
 
-            if (installPath.StartsWith("[ProgramFiles]\\", StringComparison.OrdinalIgnoreCase))
-            {
-                string pfFolder = is64 ? "[ProgramFiles64Folder]" : "[ProgramFilesFolder]";
-                installPath = pfFolder + "\\" + installPath.Substring("[ProgramFiles]\\".Length);
-            }
+            string resolvedInstallDir = _config.Product.InstallDir?.Resolve(_activeFlags) ?? string.Empty;
+            string defaultSubPath = _resolver.Tokens.Substitute(_config.Product.Manufacturer)
+                                  + "\\" + _resolver.Tokens.Substitute(_config.Product.Name);
+            string installPath = ResolveInstallPath(resolvedInstallDir, defaultSubPath, isPerUser, is64);
 
-            if (!installPath.Contains("[") && !Path.IsPathRooted(installPath))
-            {
-                // Use the platform-appropriate Program Files folder as the default root.
-                string defaultPf = is64 ? "[ProgramFiles64Folder]" : "[ProgramFilesFolder]";
-                installPath = Path.Combine(defaultPf, installPath);
-            }
+            if (isPerUser)
+                ReportPerUserAdminRequirements(FindPerUserAdminRequirements(installPath), _options.Strict);
             
             Dir? rootDir = null;
             Dir? targetDir = null;
@@ -237,6 +223,7 @@ namespace AlliePack
                 {
                     System = isSystem,
                     Permanent = false,
+                    Part = ParseEnvVarPart(ev.Part),
                 };
                 targetDir.GenericItems = (targetDir.GenericItems ?? new IGenericEntity[0])
                     .Concat(new IGenericEntity[] { envVar }).ToArray();
@@ -330,6 +317,7 @@ namespace AlliePack
                     {
                         System = isSystem,
                         Permanent = false,
+                        Part = ParseEnvVarPart(ev.Part),
                         Feature = wixFeature,
                     };
                     targetDir.GenericItems = (targetDir.GenericItems ?? new IGenericEntity[0])
@@ -401,7 +389,23 @@ namespace AlliePack
             project.Description = _config.Product.Description;
             project.Version = new Version(resolvedVersion);
 
-            project.AttributesDefinition = isMachine ? "Scope=perMachine" : "Scope=perUser";
+            if (!string.IsNullOrEmpty(_config.Product.Icon))
+                project.ControlPanelInfo.ProductIcon = _resolver.Resolve(_config.Product.Icon!);
+
+            if (_config.Product.MajorUpgrade)
+                project.MajorUpgrade = new MajorUpgrade
+                {
+                    Schedule = UpgradeSchedule.afterInstallInitialize,
+                    // MSI ignores the 4th version field when comparing, so builds that
+                    // differ only there count as the same version; replace rather than
+                    // install side by side.
+                    AllowSameVersionUpgrades = true,
+                    DowngradeErrorMessage = "A newer version of [ProductName] is already installed.",
+                };
+
+            // AttributesDefinition "Scope=..." never reached <Package> under WixSharp_wix4, so
+            // every package defaulted to perMachine; set the typed property instead.
+            project.Scope = ToWixInstallScope(effectiveScope);
 
             // Suppress "Ambiguous short name" warning as we are explicitly generating them
             // -sw1044: suppress "Ambiguous short name" (AlliePack generates explicit short names)
@@ -540,6 +544,78 @@ namespace AlliePack
                     project.WixSourceGenerated += SuppressLicenseDialogInstallDir;
                 }
             }
+
+            // Launch-on-exit checkbox, post-install runs, XML edits and UI artwork.
+            // The actions reference installed files by File Id, so pin readable Ids on
+            // those files now, before WixSharp generates the source.
+            var pinnedFileIds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            string? PinFileId(string path, string label)
+            {
+                string full = ResolvePath(path, installPath);
+                if (!fileMap.TryGetValue(full, out var wf))
+                {
+                    Console.WriteLine($"Warning: {label}: file not found in install tree: {path} (Resolved to: {full})");
+                    return null;
+                }
+                if (!pinnedFileIds.TryGetValue(full, out var id))
+                {
+                    id = "apFile" + (pinnedFileIds.Count + 1);
+                    wf.Id = id;
+                    pinnedFileIds[full] = id;
+                }
+                return id;
+            }
+
+            var extras = new InstallerExtras();
+            if (_config.Ui.LaunchOnExit is LaunchOnExitConfig loe)
+            {
+                if (useCustomUi)
+                    Console.WriteLine("Warning: ui.launchOnExit is only supported with ui: standard -- ignored.");
+                else if (PinFileId(loe.File, "ui.launchOnExit") is string id)
+                    extras.LaunchOnExit = (id, loe.Text, loe.Args, loe.Checked);
+            }
+            foreach (var run in _config.RunAfterInstall)
+            {
+                if (PinFileId(run.File, "runAfterInstall") is string id)
+                    extras.RunAfterInstall.Add((id, run.Args, run.Condition));
+            }
+            foreach (var edit in _config.XmlEdits)
+            {
+                if (PinFileId(edit.File, "xmlEdits") is string id)
+                    extras.XmlEdits.Add((id, edit.Path, edit.Name, edit.Value));
+            }
+            ValidateFileAssociations(_config.FileAssociations);
+            foreach (var fa in _config.FileAssociations)
+            {
+                string label = $"fileAssociations '{fa.Extension}'";
+                if (!(PinFileId(fa.File, label) is string fileId)) continue;
+                string? iconId = string.IsNullOrEmpty(fa.Icon) ? fileId : PinFileId(fa.Icon!, label + " icon");
+                if (iconId == null) continue;
+                extras.FileAssociations.Add(new FileAssociation
+                {
+                    Extension   = fa.Extension,
+                    ProgId      = string.IsNullOrEmpty(fa.ProgId) ? fa.Extension : fa.ProgId!,
+                    Description = fa.Description,
+                    FileId      = fileId,
+                    IconFileId  = iconId,
+                    IconIndex   = fa.IconIndex,
+                    ContentType = fa.ContentType,
+                    Verbs       = fa.Verbs.Any()
+                        ? fa.Verbs
+                        : new List<FileAssociationVerbConfig> { new FileAssociationVerbConfig { Label = "&Open" } },
+                });
+            }
+            if (!useCustomUi)
+            {
+                if (!string.IsNullOrEmpty(_config.Ui.Banner))
+                    extras.BannerBmp = Path.GetFullPath(_resolver.Resolve(_config.Ui.Banner!));
+                if (!string.IsNullOrEmpty(_config.Ui.Dialog))
+                    extras.DialogBmp = Path.GetFullPath(_resolver.Resolve(_config.Ui.Dialog!));
+            }
+            if (extras.XmlEdits.Any())
+                project.Include(WixExtension.Util);
+            if (extras.HasAny)
+                project.WixSourceGenerated += extras.Apply;
 
             // WixUI_FeatureTree has no dedicated install-directory page; the destination
             // folder is chosen via the Browse button on the feature-selection tree, which
@@ -979,6 +1055,18 @@ namespace AlliePack
         ///   WelcomeDlg → CustomizeDlg (forward), CustomizeDlg → WelcomeDlg (back).
         /// </para>
         /// </summary>
+        private static EnvVarPart ParseEnvVarPart(string? part)
+        {
+            switch ((part ?? "all").ToLowerInvariant())
+            {
+                case "all":   return EnvVarPart.all;
+                case "first": return EnvVarPart.first;
+                case "last":  return EnvVarPart.last;
+                default:
+                    throw new InvalidOperationException($"environment part '{part}' must be all, first or last.");
+            }
+        }
+
         internal static void SuppressLicenseDialog(XDocument doc)
         {
             XNamespace wix = "http://wixtoolset.org/schemas/v4/wxs";
@@ -1611,6 +1699,28 @@ Write-Host ""Done: $msiPath""
             return si;
         }
 
+        internal static void ValidateFileAssociations(List<FileAssociationConfig> associations)
+        {
+            var extensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var progIds    = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var fa in associations)
+            {
+                if (string.IsNullOrWhiteSpace(fa.Extension) || fa.Extension.StartsWith("."))
+                    throw new InvalidOperationException(
+                        $"fileAssociations: extension '{fa.Extension}' must be given without the leading dot.");
+                if (string.IsNullOrWhiteSpace(fa.File))
+                    throw new InvalidOperationException(
+                        $"fileAssociations '{fa.Extension}': file: is required.");
+                if (!extensions.Add(fa.Extension))
+                    throw new InvalidOperationException(
+                        $"fileAssociations: extension '{fa.Extension}' is declared more than once.");
+                string progId = string.IsNullOrEmpty(fa.ProgId) ? fa.Extension : fa.ProgId!;
+                if (!progIds.Add(progId))
+                    throw new InvalidOperationException(
+                        $"fileAssociations: progId '{progId}' is declared more than once.");
+            }
+        }
+
         private void AttachShortcut(
             ShortcutInfo s,
             string installPath,
@@ -1664,7 +1774,10 @@ Write-Host ""Done: $msiPath""
                 }
             }
 
-            var shortcut = new FileShortcut(s.Name, folder) { Description = s.Description };
+            // WiX rejects Description="" (WIX0006), so leave it unset when not given.
+            var shortcut = new FileShortcut(s.Name, folder);
+            if (!string.IsNullOrEmpty(s.Description))
+                shortcut.Description = s.Description;
             if (!string.IsNullOrEmpty(s.Icon))
                 shortcut.IconFile = _resolver.Resolve(s.Icon!);
             wixFile.Shortcuts = (wixFile.Shortcuts ?? new FileShortcut[0]).Concat(new[] { shortcut }).ToArray();
@@ -2340,8 +2453,8 @@ Write-Host ""Done: $msiPath""
         // -----------------------------------------------------------------------
 
         /// <summary>
-        /// Validates and returns the install scope. Valid values are perUser and perMachine.
-        /// 'both' was removed in ADR-0004 -- use Flags to produce separate per-user and
+        /// Validates and returns the install scope. Valid values are perMachine, perUser and
+        /// perUserOrMachine. 'both' was removed in ADR-0004 -- use Flags to produce separate per-user and
         /// per-machine Packages from a single Package Definition instead.
         /// </summary>
         private static string ComputeEffectiveScope(string rawInstallScope)
@@ -2354,6 +2467,131 @@ Write-Host ""Done: $msiPath""
                     "See docs/adr/0004-remove-both-scope.md for the migration path.");
 
             return rawInstallScope;
+        }
+
+        /// <summary>
+        /// Maps the effective install scope to the WiX Package Scope.
+        /// </summary>
+        internal static InstallScope ToWixInstallScope(string effectiveScope)
+        {
+            if (effectiveScope.Equals("perMachine", StringComparison.OrdinalIgnoreCase))
+                return InstallScope.perMachine;
+            if (effectiveScope.Equals("perUserOrMachine", StringComparison.OrdinalIgnoreCase))
+                return InstallScope.perUserOrMachine;
+            return InstallScope.perUser;
+        }
+
+        /// <summary>
+        /// Resolves product.installDir (or the Manufacturer\Name default) to a rooted path.
+        /// <para>
+        /// A relative path, and AlliePack's own <c>[ProgramFiles]</c> token, are rooted at
+        /// the platform's Program Files folder -- except under perUser, where they are rooted
+        /// at <c>[LocalAppDataFolder]\Programs</c>.  A WiX perUser package leaves ALLUSERS
+        /// empty, so MSI does not redirect Program Files, and a non-admin install there fails.
+        /// Explicit WiX folder properties pass through unchanged.
+        /// </para>
+        /// </summary>
+        internal static string ResolveInstallPath(string configured, string defaultSubPath, bool perUser, bool is64)
+        {
+            string path = (string.IsNullOrEmpty(configured) ? defaultSubPath : configured).Replace('/', '\\');
+            string root = perUser ? "[LocalAppDataFolder]\\Programs"
+                        : is64    ? "[ProgramFiles64Folder]"
+                        :           "[ProgramFilesFolder]";
+
+            if (path.StartsWith("[ProgramFiles]\\", StringComparison.OrdinalIgnoreCase))
+                path = root + "\\" + path.Substring("[ProgramFiles]\\".Length);
+
+            if (!path.Contains("[") && !Path.IsPathRooted(path))
+                path = Path.Combine(root, path);
+
+            return path;
+        }
+
+        /// <summary>
+        /// WiX folder properties a non-admin cannot write to.  A perUser package installs
+        /// without elevation, so files placed under these fail at install time.
+        /// </summary>
+        private static readonly string[] MachineOnlyFolders =
+        {
+            "[ProgramFilesFolder]", "[ProgramFiles64Folder]", "[ProgramFiles6432Folder]",
+            "[CommonFilesFolder]", "[CommonFiles64Folder]", "[CommonFiles6432Folder]",
+            "[CommonAppDataFolder]", "[CommonDesktopFolder]", "[CommonProgramMenuFolder]",
+            "[CommonStartupFolder]", "[CommonStartMenuFolder]", "[CommonTemplatesFolder]",
+            "[WindowsFolder]", "[SystemFolder]", "[System64Folder]", "[System16Folder]",
+            "[FontsFolder]", "[WindowsVolume]",
+        };
+
+        internal static bool IsMachineOnlyPath(string path)
+        {
+            string p = path.Trim().Replace('/', '\\');
+            return MachineOnlyFolders.Any(f =>
+                p.Equals(f, StringComparison.OrdinalIgnoreCase) ||
+                p.StartsWith(f + "\\", StringComparison.OrdinalIgnoreCase));
+        }
+
+        /// <summary>
+        /// Lists what in a perUser package needs admin rights: machine-only install paths,
+        /// HKLM / HKU registry values, machine environment variables and Windows services.
+        /// They build fine but fail when a non-admin installs the package.
+        /// </summary>
+        internal List<string> FindPerUserAdminRequirements(string installPath)
+        {
+            var issues = new List<string>();
+
+            void CheckPath(string what, string? path)
+            {
+                if (!string.IsNullOrEmpty(path) && IsMachineOnlyPath(path!))
+                    issues.Add($"{what} '{path}' is a per-machine location");
+            }
+
+            void CheckContent(string where, List<RegistryConfig> registry, List<EnvVarConfig> environment,
+                              List<ServiceConfig> services, List<FileGroupConfig> groups, List<ShortcutInfo> shortcuts)
+            {
+                foreach (var reg in registry)
+                {
+                    var hive = ParseRegistryHive(reg.Root);
+                    if (hive == RegistryHive.LocalMachine || hive == RegistryHive.Users)
+                        issues.Add($"{where}registry value '{reg.Root}\\{reg.Key}' is outside HKCU");
+                }
+                foreach (var ev in environment)
+                    if (ev.Scope != null && ev.Scope.Resolve(_activeFlags).Equals("machine", StringComparison.OrdinalIgnoreCase))
+                        issues.Add($"{where}environment variable '{ev.Name}' has scope: machine");
+                foreach (var svc in services)
+                    issues.Add($"{where}service '{svc.Name}' installs a Windows service");
+                foreach (var g in groups)
+                    CheckPath($"{where}group '{g.Id}' destination", g.DestinationDir);
+                foreach (var sc in shortcuts)
+                    CheckPath($"{where}shortcut '{sc.Name}' folder", sc.Folder);
+            }
+
+            CheckPath("installDir", installPath);
+            foreach (var d in _config.Directories)
+                if (string.IsNullOrEmpty(d.Type))
+                    CheckPath($"directory '{d.Id}'", d.Path.Resolve(_activeFlags));
+            CheckContent("", _config.Registry, _config.Environment, _config.Services, _config.Groups, _config.Shortcuts);
+            foreach (var fc in _config.Features)
+                CheckContent($"feature '{fc.Id}': ", fc.Registry, fc.Environment, fc.Services, fc.Groups, fc.Shortcuts);
+
+            return issues;
+        }
+
+        /// <summary>
+        /// Warns about each perUser admin requirement, or fails the build under --strict.
+        /// </summary>
+        internal static void ReportPerUserAdminRequirements(List<string> issues, bool strict)
+        {
+            if (issues.Count == 0) return;
+
+            const string why = "a perUser package installs without elevation, so a non-admin install will fail";
+            if (strict)
+                throw new InvalidOperationException(
+                    "installScope: perUser, but the package needs admin rights (" + why + "), and --strict " +
+                    "makes that an error:" + Environment.NewLine + "  " +
+                    string.Join(Environment.NewLine + "  ", issues) + Environment.NewLine +
+                    "Use installScope: perUserOrMachine or perMachine, or move these to per-user locations.");
+
+            foreach (var issue in issues)
+                Console.WriteLine($"Warning: installScope: perUser: {issue}; {why}.");
         }
 
         /// <summary>
@@ -2591,6 +2829,20 @@ Write-Host ""Done: $msiPath""
                     Console.WriteLine($"  [{reg.Root}\\{reg.Key}]{bitNote}");
                     string displayName = string.IsNullOrEmpty(reg.Name) ? "(Default)" : reg.Name;
                     Console.WriteLine($"    {displayName} ({reg.Type}) = {val}");
+                }
+            }
+
+            if (_config.FileAssociations.Any())
+            {
+                Console.WriteLine("File Associations:");
+                foreach (var fa in _config.FileAssociations)
+                {
+                    string progId = string.IsNullOrEmpty(fa.ProgId) ? fa.Extension : fa.ProgId!;
+                    Console.WriteLine($"  .{fa.Extension} -> {progId} -> {fa.File}");
+                    foreach (var verb in fa.Verbs)
+                        Console.WriteLine($"    {verb.Id}: {verb.Args}");
+                    if (!fa.Verbs.Any())
+                        Console.WriteLine("    open: \"%1\" (default)");
                 }
             }
 

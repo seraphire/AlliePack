@@ -21,6 +21,10 @@ features:         # optional
 releaseFlags:     # optional
 defaultActiveFlags: # optional
 signing:          # optional
+ui:               # optional
+runAfterInstall:  # optional
+xmlEdits:         # optional
+fileAssociations: # optional
 wixToolsPath:     # optional
 wix:              # optional
 ```
@@ -36,10 +40,20 @@ wix:              # optional
 | `version` | string or version block | yes | — | Four-part (`1.0.0.0`), from PE file, or from git tags. See [version sourcing](#version-sourcing). |
 | `description` | string | no | `""` | Description shown in Add/Remove Programs |
 | `upgradeCode` | GUID string | yes | — | Must stay constant across all versions of your product. Changing this breaks upgrades. |
-| `installScope` | string or conditional | no | `perMachine` | `perUser` or `perMachine` |
-| `installDir` | string or conditional | no | `[ProgramFilesFolder]\Manufacturer\Name` | Root install directory |
+| `installScope` | string or conditional | no | `perMachine` | `perMachine`, `perUser` or `perUserOrMachine`. See [install scope](#install-scope). |
+| `installDir` | string or conditional | no | `[ProgramFilesFolder]\Manufacturer\Name` (`[ProgramFiles64Folder]` on x64/arm64; `[LocalAppDataFolder]\Programs` under `perUser`) | Root install directory. A relative path and the `[ProgramFiles]` token are rooted the same way. |
 | `platform` | string | no | `x86` | `x86`, `x64`, or `arm64` |
 | `licenseFile` | string | no | — | Path to an `.rtf` file. Adds a license agreement dialog to the installer UI. |
+| `icon` | string | no | — | Path to an `.ico` file shown in Add/Remove Programs (`ARPPRODUCTICON`). |
+| `majorUpgrade` | bool | no | `false` | Emit `<MajorUpgrade>` so installing a newer version removes the older one with the same `upgradeCode`. Same-version upgrades are allowed, because MSI ignores the 4th version field when comparing. |
+
+### Install scope
+
+| Value | Behaviour |
+|---|---|
+| `perMachine` | All users. Requires elevation. |
+| `perUser` | Current user only (WiX `perUser`, no ALLUSERS). Never elevates; installs under `%LOCALAPPDATA%\Programs` by default. Content that needs admin rights (per-machine paths such as `[ProgramFiles64Folder]`, `HKLM`/`HKU` registry values, `scope: machine` environment variables, services) is a build warning; `--strict` makes it an error. |
+| `perUserOrMachine` | WiX dual-purpose package (ALLUSERS=2, MSIINSTALLPERUSER=1). Installs for the current user by default, with Program Files redirected to `%LOCALAPPDATA%\Programs`; an admin can force a per-machine install with `MSIINSTALLPERUSER=""`. |
 
 > `ui:` is a **top-level** key, not a `product:` field — see [Installer UI](#installer-ui).
 
@@ -87,6 +101,19 @@ ui:
 |---|---|---|---|
 | `type` | `standard` \| `custom` | `standard` | `standard` uses WiX's built-in dialog set (no extra DLLs). `custom` uses WixSharp's WPF EmbeddedUI (requires `WixSharp.UI.CA.dll` in the artifact). |
 | `allowInstallDirChange` | bool | `true` | Whether the user can choose the install directory. Ignored by `custom`, which always includes its own directory dialog. |
+| `banner` | string | — | `standard` only. 493×58 `.bmp` across the top of the inner pages (`WixUIBannerBmp`). |
+| `dialog` | string | — | `standard` only. 493×312 `.bmp` behind the Welcome and Finish pages (`WixUIDialogBmp`). Keep the right-hand area plain; text is drawn over it. |
+| `launchOnExit` | block | — | `standard` only. Adds a "Launch" checkbox to the Finish page. Fields: `file` (installed path, e.g. `[INSTALLDIR]\\App.exe`), `text`, `args`, `checked` (initial state, default `false`). The app starts in the UI process, as the interactive user. |
+
+```yaml
+ui:
+  type: standard
+  banner: "art\\banner.bmp"
+  dialog: "art\\dialog.bmp"
+  launchOnExit:
+    file: "[INSTALLDIR]\\MyApp.exe"
+    text: "Launch My App when setup exits."
+```
 
 #### Which pages are shown (`type: standard`)
 
@@ -214,8 +241,73 @@ List of `StructureElement` entries defining the installed file tree under `INSTA
 | `name` | string | Variable name |
 | `value` | string or conditional | Value; supports `[INSTALLDIR]` and WiX properties |
 | `scope` | string or conditional | `user` or `machine`. Default inferred from `installScope`. |
+| `part` | string | `all` (default) replaces the variable; `last` appends and `first` prepends, `;`-separated. Use `last` for `PATH` -- `all` would overwrite it. |
 
 Variables are removed on uninstall.
+
+---
+
+## `runAfterInstall:`
+
+Installed programs to start, without waiting, after `InstallFinalize`.
+
+| Field | Type | Notes |
+|---|---|---|
+| `file` | string | Installed path, e.g. `[INSTALLDIR]\\MyApp.exe` |
+| `args` | string | Command line; MSI-formatted, so `[ProductVersion]` etc. expand |
+| `condition` | string | MSI condition. Default `NOT REMOVE~="ALL"` (never on uninstall). `UILevel <> 5` limits it to silent/basic-UI installs. |
+
+---
+
+## `xmlEdits:`
+
+Set values in installed XML files at install time (`util:XmlFile`, `setValue`). Each edit lives in
+the component that installs the file, so it reapplies on repair.
+
+| Field | Type | Notes |
+|---|---|---|
+| `file` | string | Installed path of the XML file, e.g. `[INSTALLDIR]\\settings.xml` |
+| `path` | string | XPath of the node to set; may select an attribute directly (`/Root/@attr`) |
+| `name` | string | Optional attribute name on the element selected by `path` |
+| `value` | string | MSI-formatted; `[INSTALLDIR]` expands at install time (it ends with `\`) |
+
+```yaml
+xmlEdits:
+  - file: "[INSTALLDIR]\\settings.xml"
+    path: "/Config/@dataDir"
+    value: "[INSTALLDIR]data"
+```
+
+---
+
+## `fileAssociations:`
+
+Register a file extension to an installed program.  Emits a non-advertised WiX
+`ProgId` / `Extension` / `Verb` in the component that installs `file`, so the keys follow
+that file's feature and are removed on uninstall.  `HKCR` maps to `HKLM\Software\Classes`
+(perMachine) or `HKCU\Software\Classes` (perUser).
+
+| Field | Type | Notes |
+|---|---|---|
+| `extension` | string | Required. Without the leading dot, e.g. `myx`. Must be unique. |
+| `progId` | string | Default: the extension. Must be unique. |
+| `description` | string | Shown by Explorer as the file type name. |
+| `file` | string | Required. Installed file that opens the extension, e.g. `[INSTALLDIR]\MyApp.exe` |
+| `icon` | string | Installed file holding the icon resource (exe, dll or `.ico`). Default: `file`. |
+| `iconIndex` | int | Icon resource index. Default `0`. |
+| `contentType` | string | Optional MIME type, e.g. `application/x-myx` |
+| `verbs` | list | Default: one verb `open`, label `&Open`, args `"%1"` (quoted). |
+| `verbs[].id` | string | Verb key, e.g. `open`, `edit`, `print`. Default `open`. |
+| `verbs[].label` | string | Context-menu text; `&` marks the access key. |
+| `verbs[].args` | string | Command-line arguments; MSI-formatted. Default `"%1"` (quoted). |
+
+```yaml
+fileAssociations:
+  - extension: myx
+    progId: MyApp.Document
+    description: "MyApp Document"
+    file: "[INSTALLDIR]\MyApp.exe"
+```
 
 ---
 
@@ -223,7 +315,7 @@ Variables are removed on uninstall.
 
 | Field | Type | Notes |
 |---|---|---|
-| `root` | string | `HKLM`, `HKCU`, `HKCR`, `HKU` |
+| `root` | string | `HKLM` (default), `HKCU`, `HKCR`, `HKU`. Use `HKCU` in a `perUser` package; `HKLM` and `HKU` need admin rights. |
 | `key` | string | Registry key path under the hive |
 | `name` | string | Value name. Omit for the default value. |
 | `value` | string or conditional | Value data. Supports `[INSTALLDIR]` and WiX properties. |

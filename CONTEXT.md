@@ -40,7 +40,8 @@ A named, user-selectable group of content shown in the installer's custom-setup 
 _Avoid_: Option, Module, Component (a distinct WiX concept AlliePack does not expose directly)
 
 **Scope**:
-Whether a Package installs for all users on the machine (`perMachine`) or only for the current user (`perUser`). Declared in the `product:` section of the Package Definition. Valid values are `perMachine` and `perUser` only -- see ADR-0004.
+Whether a Package installs for all users on the machine (`perMachine`) or only for the current user (`perUser`, `perUserOrMachine`). Declared in the `product:` section of the Package Definition. Valid values are `perMachine`, `perUser` and `perUserOrMachine`; "both" was removed -- see ADR-0004.
+`perUserOrMachine` is the WiX dual-purpose package (ALLUSERS=2, MSIINSTALLPERUSER=1): it installs for the current user by default, with Program Files redirected to %LOCALAPPDATA%\Programs, but an admin can force a per-machine install by clearing MSIINSTALLPERUSER; AlliePack's shortcuts, env vars and typed directories stay per-user either way. `perUser` is a true WiX perUser package (no ALLUSERS): it installs for the current user only, never elevates, and cannot be forced per-machine. Its default install directory is %LOCALAPPDATA%\Programs\<Manufacturer>\<Name>, and AlliePack's `[ProgramFiles]` token resolves there too. Content that needs admin rights (per-machine paths such as `[ProgramFiles64Folder]`, HKLM/HKU registry values, `scope: machine` environment variables, services) builds with a warning, because a non-admin install of it will fail; `--strict` makes those warnings errors. See ADR-0006.
 _Avoid_: "both" (removed), "machine-wide" / "current user" (plain English acceptable verbally, but perMachine / perUser are canonical in the Package Definition)
 
 **Portable WXS Export** *(not yet implemented)*:

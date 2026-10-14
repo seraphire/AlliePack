@@ -9,3 +9,5 @@ If a future consumer has a genuine need, the feature can be reintroduced at that
 ## Consequences
 
 Valid scope values are now `perMachine` and `perUser` only. Package Definitions using `scope: both` should be updated to an explicit scope and a Flag-driven build if both variants are needed.
+
+_Update:_ `perUserOrMachine` was added as a third value later, and `perUser` became a true WiX perUser package in [ADR-0006](0006-peruser-is-a-true-wix-peruser-package.md).

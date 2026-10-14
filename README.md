@@ -14,10 +14,11 @@ AlliePack is a YAML-driven MSI installer builder built on **WixSharp** and **WiX
 - **Flexible versioning** -- literal string, PE file version (FileVersionInfo), or derived from git tags
 - **Dry-run / report mode** to preview MSI contents without building
 - **Platform support**: x86, x64, arm64
-- **Install scope**: perMachine or perUser (use Flags to produce both from one config)
+- **Install scope**: perMachine, perUser or perUserOrMachine (use Flags to produce both from one config)
 - **Registry keys and values**
 - **Environment variables** (set/remove on install/uninstall)
 - **Windows services** (install, start, stop, remove)
+- **File associations** -- register an extension to an installed program, with verbs and icon
 - **Code signing** -- sign the MSI and packaged files with `signtool.exe`; supports cert store (thumbprint), PFX, Azure Trusted Signing, or any custom signing tool
 - **Release flags** for conditional configuration (perUser vs. perMachine builds, etc.)
 
@@ -57,6 +58,9 @@ Options:
                             then to unconditional values.
       --keep-wxs            Preserve the generated .wxs source file after
                             building. Useful for debugging or CI artifacts.
+      --strict              Fail on warnings for content that builds but will
+                            fail at install time (e.g. HKLM registry or
+                            services in a perUser package).
 ```
 
 ### Examples
@@ -111,9 +115,9 @@ product:
   version: "1.0.0.0"         # See version sourcing options below
   description: "My App installer"
   upgradeCode: "YOUR-GUID"   # Fixed GUID -- changing this breaks upgrades
-  installScope: "perMachine" # perMachine or perUser
+  installScope: "perMachine" # perMachine, perUser or perUserOrMachine
   platform: "x64"            # x86 (default), x64, arm64
-  installDir: "[ProgramFiles]\\MyCompany\\MyApp"  # optional custom install path
+  installDir: "[ProgramFiles]\\MyCompany\\MyApp"  # optional; perUser roots [ProgramFiles] at %LOCALAPPDATA%\Programs
   licenseFile: "license.rtf" # optional; adds license agreement dialog
 ```
 
@@ -280,6 +284,30 @@ registry:
     win64: true       # optional; defaults to platform setting
 ```
 
+### `fileAssociations`
+
+Registers a file extension so it opens in an installed program.  The ProgId lives in the
+component that installs `file`, so uninstall removes it.  Not advertised: plain registry
+entries under `HKCR` (per-machine or per-user `Software\Classes`, by install scope).
+
+```yaml
+fileAssociations:
+  - extension: "myx"                    # no leading dot
+    progId: "MyApp.Document"            # optional; defaults to the extension
+    description: "MyApp Document"
+    file: "[INSTALLDIR]\MyApp.exe"      # installed file that opens it
+    icon: "[INSTALLDIR]\MyApp.exe"      # optional installed file; defaults to file
+    iconIndex: 0                        # optional
+    contentType: "application/x-myx"    # optional MIME type
+    verbs:                              # optional; default: open / "&Open" / "\"%1\""
+      - id: open
+        label: "&Open"
+        args: "\"%1\""
+      - id: edit
+        label: "&Edit"
+        args: "/edit \"%1\""
+```
+
 ### `services`
 
 ```yaml
@@ -436,6 +464,7 @@ src/AlliePack/
 - [x] Registry keys and values
 - [x] Environment variables
 - [x] Windows services
+- [x] File associations
 - [x] Named directories and file groups (install outside INSTALLDIR)
 - [x] Release flags and conditional inclusion (`--flag PerUser` / `--flag PerMachine`)
 - [x] `condition: notExists` -- install config files on first install only

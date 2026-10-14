@@ -49,6 +49,12 @@ namespace AlliePack
                        "Use --output to specify the export directory (default: <ProductName>-wxs in CWD).")]
         public bool ExportWxs { get; set; }
 
+        [Option("strict", Required = false,
+            HelpText = "Turn warnings about things that build but will fail at install time into errors. " +
+                       "Currently: installScope: perUser content that needs admin rights " +
+                       "(per-machine paths, HKLM/HKU registry, machine environment variables, services).")]
+        public bool Strict { get; set; }
+
         [Option("debug", Required = false,
             HelpText = "Enable diagnostic output: resolved config values, alias expansions, " +
                        "per-file source-to-destination mappings, shortcut resolution, and WiX tool location. " +
