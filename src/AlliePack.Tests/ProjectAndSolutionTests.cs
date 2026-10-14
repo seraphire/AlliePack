@@ -33,7 +33,9 @@ namespace AlliePack.Tests
             string dir = AppDomain.CurrentDomain.BaseDirectory;
             while (!string.IsNullOrEmpty(dir))
             {
-                if (Directory.Exists(Path.Combine(dir, ".git"))) return dir;
+                // .git is a file, not a directory, in a worktree or submodule checkout.
+                string git = Path.Combine(dir, ".git");
+                if (Directory.Exists(git) || System.IO.File.Exists(git)) return dir;
                 string? parent = Path.GetDirectoryName(dir);
                 if (parent == dir) break;
                 dir = parent!;
