@@ -572,7 +572,12 @@ namespace AlliePack
                 if (useCustomUi)
                     Console.WriteLine("Warning: ui.launchOnExit is only supported with ui: standard -- ignored.");
                 else if (PinFileId(loe.File, "ui.launchOnExit") is string id)
+                {
                     extras.LaunchOnExit = (id, loe.Text, loe.Args, loe.Checked);
+                    if (loe.Text.Length > ExitDialogLayout.MaxTextLength)
+                        Console.WriteLine($"Warning: ui.launchOnExit text is {loe.Text.Length} characters; " +
+                            $"about {ExitDialogLayout.MaxTextLength} fit beside the Finish-page buttons, so it may be cut off.");
+                }
             }
             foreach (var run in _config.RunAfterInstall)
             {
@@ -702,6 +707,12 @@ namespace AlliePack
                 }
 
                 string msiPath = project.BuildMsi();
+
+                if (extras.LaunchOnExit != null && System.IO.File.Exists(msiPath))
+                {
+                    if (!ExitDialogLayout.MoveLaunchCheckBox(msiPath))
+                        Console.WriteLine("Warning: ui.launchOnExit: ExitDialog has no OptionalCheckBox; checkbox not moved.");
+                }
 
                 if (_config.Signing != null)
                 {
@@ -2688,35 +2699,40 @@ Write-Host ""Done: $msiPath""
             return result;
         }
 
-        private string ResolveFolder(string folder, bool isMachine)
+        internal static string ResolveFolder(string folder, bool isMachine)
         {
-            // Step 1: resolve well-known name aliases (startmenu, desktop, startup)
+            // Step 1: resolve well-known name aliases (startmenu, desktop, startup).
+            // isMachine is not needed here: Windows Installer has no all-users variants of
+            // these folders. ProgramMenuFolder, DesktopFolder and StartupFolder point at the
+            // All Users profile when ALLUSERS is set, which the install scope decides.
             switch (folder.Trim().ToLowerInvariant())
             {
-                case "startmenu":
-                    folder = isMachine ? "[CommonProgramMenuFolder]" : "[ProgramMenuFolder]";
-                    break;
-                case "desktop":
-                    folder = isMachine ? "[CommonDesktopFolder]"     : "[DesktopFolder]";
-                    break;
-                case "startup":
-                    folder = isMachine ? "[CommonStartupFolder]"     : "[StartupFolder]";
-                    break;
+                case "startmenu": folder = "[ProgramMenuFolder]"; break;
+                case "desktop":   folder = "[DesktopFolder]";     break;
+                case "startup":   folder = "[StartupFolder]";     break;
             }
 
             string result = folder.Replace('/', '\\');
 
-            // Step 2: convert per-user WiX bracket properties to WixSharp % keywords
-            // (WixSharp requires % form for its shortcut Dir entities).
-            // Common/all-users variants stay in bracket form -- WiX handles them directly.
-            if (result.StartsWith("[ProgramMenuFolder]", StringComparison.OrdinalIgnoreCase))
-                result = "%ProgramMenu%" + result.Substring("[ProgramMenuFolder]".Length);
-            else if (result.StartsWith("[Desktop]", StringComparison.OrdinalIgnoreCase))
-                result = "%Desktop%" + result.Substring("[Desktop]".Length);
-            else if (result.StartsWith("[DesktopFolder]", StringComparison.OrdinalIgnoreCase))
-                result = "%Desktop%" + result.Substring("[DesktopFolder]".Length);
-            else if (result.StartsWith("[StartupFolder]", StringComparison.OrdinalIgnoreCase))
-                result = "%Startup%" + result.Substring("[StartupFolder]".Length);
+            // Step 2: convert WiX bracket properties to WixSharp % keywords (WixSharp
+            // requires % form for its shortcut Dir entities; a bracket form becomes a
+            // literal folder named "[...]" under TARGETDIR). The Common* spellings are not
+            // Windows Installer properties; they are accepted as the same folders.
+            var keywords = new[]
+            {
+                ("[ProgramMenuFolder]",       "%ProgramMenu%"),
+                ("[CommonProgramMenuFolder]", "%ProgramMenu%"),
+                ("[DesktopFolder]",           "%Desktop%"),
+                ("[CommonDesktopFolder]",     "%Desktop%"),
+                ("[Desktop]",                 "%Desktop%"),
+                ("[StartupFolder]",           "%Startup%"),
+                ("[CommonStartupFolder]",     "%Startup%"),
+            };
+            foreach (var (property, keyword) in keywords)
+            {
+                if (result.StartsWith(property, StringComparison.OrdinalIgnoreCase))
+                    return keyword + result.Substring(property.Length);
+            }
 
             return result;
         }

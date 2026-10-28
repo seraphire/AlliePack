@@ -224,13 +224,17 @@ List of `StructureElement` entries defining the installed file tree under `INSTA
 
 | Value | Location |
 |---|---|
-| `[ProgramMenuFolder]` | Start Menu\Programs (current user) |
-| `[CommonProgramMenuFolder]` | Start Menu\Programs (all users) |
-| `[DesktopFolder]` | Desktop (current user) |
-| `[CommonDesktopFolder]` | Desktop (all users) |
-| `startmenu` | Scope-aware: per-user or all-users based on `installScope` |
-| `desktop` | Scope-aware: per-user or all-users based on `installScope` |
-| `startup` | Scope-aware startup folder |
+| `[ProgramMenuFolder]` | Start Menu\Programs |
+| `[DesktopFolder]` | Desktop |
+| `[StartupFolder]` | Startup |
+| `startmenu` | Same as `[ProgramMenuFolder]` |
+| `desktop` | Same as `[DesktopFolder]` |
+| `startup` | Same as `[StartupFolder]` |
+
+All of these follow `installScope`: Windows Installer points them at the All Users profile
+for a per-machine install and at the current user's profile for a per-user one. It has no
+separate all-users properties; `[CommonProgramMenuFolder]`, `[CommonDesktopFolder]` and
+`[CommonStartupFolder]` are accepted as the same folders.
 
 ---
 
