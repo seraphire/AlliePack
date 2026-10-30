@@ -675,6 +675,23 @@ namespace AlliePack
         [YamlMember(Alias = "icon")]
         public string? Icon { get; set; }
 
+        // Add/Remove Programs detail lines.  Each maps to the ARP property named
+        // beside it; an omitted field emits nothing, so the entry simply lacks that row.
+        [YamlMember(Alias = "comments")]
+        public string? Comments { get; set; }            // ARPCOMMENTS      -> "Comments"
+
+        [YamlMember(Alias = "contact")]
+        public string? Contact { get; set; }             // ARPCONTACT       -> "Contact"
+
+        [YamlMember(Alias = "helpLink")]
+        public string? HelpLink { get; set; }            // ARPHELPLINK      -> "Help link"
+
+        [YamlMember(Alias = "supportLink")]
+        public string? SupportLink { get; set; }         // ARPURLINFOABOUT  -> "Support link"
+
+        [YamlMember(Alias = "updateLink")]
+        public string? UpdateLink { get; set; }          // ARPURLUPDATEINFO -> "Update information"
+
         // Emit <MajorUpgrade> so installing a newer version removes the older one
         // (same UpgradeCode).  Off by default to keep existing configs unchanged.
         [YamlMember(Alias = "majorUpgrade")]

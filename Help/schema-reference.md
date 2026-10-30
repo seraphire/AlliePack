@@ -45,6 +45,11 @@ wix:              # optional
 | `platform` | string | no | `x86` | `x86`, `x64`, or `arm64` |
 | `licenseFile` | string | no | — | Path to an `.rtf` file. Adds a license agreement dialog to the installer UI. |
 | `icon` | string | no | — | Path to an `.ico` file shown in Add/Remove Programs (`ARPPRODUCTICON`). |
+| `comments` | string | no | — | Free text shown as **Comments** in Add/Remove Programs (`ARPCOMMENTS`). Separate from `description`, which is the package summary. |
+| `contact` | string | no | — | Support contact shown as **Contact** (`ARPCONTACT`). |
+| `helpLink` | string | no | — | URL shown as **Help link** (`ARPHELPLINK`). |
+| `supportLink` | string | no | — | URL shown as **Support link** (`ARPURLINFOABOUT`). |
+| `updateLink` | string | no | — | URL shown as **Update information** (`ARPURLUPDATEINFO`). |
 | `majorUpgrade` | bool | no | `false` | Emit `<MajorUpgrade>` so installing a newer version removes the older one with the same `upgradeCode`. Same-version upgrades are allowed, because MSI ignores the 4th version field when comparing. |
 
 ### Install scope

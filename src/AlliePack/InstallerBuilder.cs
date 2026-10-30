@@ -392,6 +392,20 @@ namespace AlliePack
             if (!string.IsNullOrEmpty(_config.Product.Icon))
                 project.ControlPanelInfo.ProductIcon = _resolver.Resolve(_config.Product.Icon!);
 
+            // Add/Remove Programs detail lines.  WixSharp writes an ARP property per
+            // non-empty value, so leaving one unset keeps that row off the entry.
+            var arp = project.ControlPanelInfo;
+            if (!string.IsNullOrWhiteSpace(_config.Product.Comments))
+                arp.Comments = _config.Product.Comments;
+            if (!string.IsNullOrWhiteSpace(_config.Product.Contact))
+                arp.Contact = _config.Product.Contact;
+            if (!string.IsNullOrWhiteSpace(_config.Product.HelpLink))
+                arp.HelpLink = _config.Product.HelpLink;
+            if (!string.IsNullOrWhiteSpace(_config.Product.SupportLink))
+                arp.UrlInfoAbout = _config.Product.SupportLink;
+            if (!string.IsNullOrWhiteSpace(_config.Product.UpdateLink))
+                arp.UrlUpdateInfo = _config.Product.UpdateLink;
+
             if (_config.Product.MajorUpgrade)
                 project.MajorUpgrade = new MajorUpgrade
                 {
