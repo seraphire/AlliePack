@@ -624,6 +624,8 @@ namespace AlliePack
                         : new List<FileAssociationVerbConfig> { new FileAssociationVerbConfig { Label = "&Open" } },
                 });
             }
+            ValidateRequirements(_config.Requires);
+            extras.Requirements.AddRange(_config.Requires);
             if (!useCustomUi)
             {
                 if (!string.IsNullOrEmpty(_config.Ui.Banner))
@@ -1743,6 +1745,30 @@ Write-Host ""Done: $msiPath""
                 if (!progIds.Add(progId))
                     throw new InvalidOperationException(
                         $"fileAssociations: progId '{progId}' is declared more than once.");
+            }
+        }
+
+        static readonly HashSet<string> RegistryRoots =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "HKLM", "HKCU", "HKCR", "HKU" };
+
+        internal static void ValidateRequirements(List<RequirementConfig> requirements)
+        {
+            foreach (var req in requirements)
+            {
+                if (string.IsNullOrWhiteSpace(req.Name))
+                    throw new InvalidOperationException("requires: every entry needs a name:.");
+                string label = $"requires '{req.Name}'";
+                if (string.IsNullOrWhiteSpace(req.Registry.Key))
+                    throw new InvalidOperationException($"{label}: registry.key is required.");
+                if (!RegistryRoots.Contains(req.Registry.Root))
+                    throw new InvalidOperationException(
+                        $"{label}: registry.root '{req.Registry.Root}' must be HKLM, HKCU, HKCR or HKU.");
+                if (req.Registry.Bitness is int bits && bits != 32 && bits != 64)
+                    throw new InvalidOperationException(
+                        $"{label}: registry.bitness must be 32 or 64 (or omitted), not {bits}.");
+                if (req.File != null && (req.File.Length == 0 || req.File.IndexOfAny(new[] { '\\', '/' }) >= 0))
+                    throw new InvalidOperationException(
+                        $"{label}: file: must be a bare file name in the directory the registry value names.");
             }
         }
 
@@ -2873,6 +2899,18 @@ Write-Host ""Done: $msiPath""
                         Console.WriteLine($"    {verb.Id}: {verb.Args}");
                     if (!fa.Verbs.Any())
                         Console.WriteLine("    open: \"%1\" (default)");
+                }
+            }
+
+            if (_config.Requires.Any())
+            {
+                Console.WriteLine("Requires (checked before install):");
+                foreach (var req in _config.Requires)
+                {
+                    string bits = req.Registry.Bitness is int b ? $" [{b}-bit view]" : string.Empty;
+                    string value = string.IsNullOrEmpty(req.Registry.Value) ? "(Default)" : req.Registry.Value!;
+                    string file = string.IsNullOrEmpty(req.File) ? string.Empty : $" containing {req.File}";
+                    Console.WriteLine($"  {req.Name}: directory in [{req.Registry.Root}\\{req.Registry.Key}] {value}{bits}{file}");
                 }
             }
 

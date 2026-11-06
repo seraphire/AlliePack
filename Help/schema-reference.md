@@ -25,6 +25,7 @@ ui:               # optional
 runAfterInstall:  # optional
 xmlEdits:         # optional
 fileAssociations: # optional
+requires:         # optional
 wixToolsPath:     # optional
 wix:              # optional
 ```
@@ -316,6 +317,37 @@ fileAssociations:
     progId: MyApp.Document
     description: "MyApp Document"
     file: "[INSTALLDIR]\MyApp.exe"
+```
+
+---
+
+## `requires:`
+
+Software that must already be installed. Each entry reads a registry value that holds the
+other product's install directory, optionally checks that a file exists in it, and stops the
+install with `message` if either is missing. Emits a WiX `RegistrySearch` (`Type="directory"`,
+with a nested `FileSearch` when `file` is set) into a secure property `APREQUIRES<n>`, and a
+`Launch` condition `Installed OR APREQUIRES<n>`, so uninstall, repair and modify are never
+blocked. A per-user package can read `HKLM`; the search needs no elevation.
+
+| Field | Type | Notes |
+|---|---|---|
+| `name` | string | Required. Shown in `--report` and in the default message. |
+| `registry.root` | string | `HKLM` (default), `HKCU`, `HKCR` or `HKU`. |
+| `registry.key` | string | Required, e.g. `Software\Vendor\Product`. |
+| `registry.value` | string | Value name. Omit for the key's default value. |
+| `registry.bitness` | int | `32` or `64`. Omit for the package's own view. A 32-bit product on 64-bit Windows writes under `WOW6432Node`, which an x64 package sees only with `32`. |
+| `file` | string | Bare file name that must exist in that directory, e.g. `Product.exe`. |
+| `message` | string | Default: `<name> must be installed first. Install <name>, then run this setup again.` |
+
+```yaml
+requires:
+  - name: gmStudio
+    registry:
+      key: Software\GreatMigrations
+      value: InstallDir
+      bitness: 32
+    file: gmStudio.exe
 ```
 
 ---
