@@ -424,6 +424,59 @@ namespace AlliePack
         // File extensions registered to an installed file (ProgId/Extension/Verb).
         [YamlMember(Alias = "fileAssociations")]
         public List<FileAssociationConfig> FileAssociations { get; set; } = new();
+
+        // Software that must already be installed.  Each entry becomes an AppSearch
+        // (RegistrySearch, optionally with a FileSearch) and a LaunchCondition.
+        [YamlMember(Alias = "requires")]
+        public List<RequirementConfig> Requires { get; set; } = new();
+    }
+
+    // -----------------------------------------------------------------------
+    // Prerequisite checks
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// A product that must already be installed, found through a registry value that holds
+    /// its install directory.  Install stops with <see cref="Message"/> when the value is
+    /// missing, the directory does not exist, or (when <see cref="File"/> is set) the file is
+    /// not in it.  Never checked on uninstall, repair or modify.
+    /// </summary>
+    public class RequirementConfig
+    {
+        // Label for --report and diagnostics, e.g. gmStudio.
+        [YamlMember(Alias = "name")]
+        public string Name { get; set; } = string.Empty;
+
+        [YamlMember(Alias = "registry")]
+        public RequirementRegistryConfig Registry { get; set; } = new();
+
+        // Optional file that must exist in the directory the registry value names.
+        [YamlMember(Alias = "file")]
+        public string? File { get; set; }
+
+        // Shown when the requirement is not met.  Default names the requirement.
+        [YamlMember(Alias = "message")]
+        public string? Message { get; set; }
+    }
+
+    public class RequirementRegistryConfig
+    {
+        // HKLM, HKCU, HKCR or HKU.
+        [YamlMember(Alias = "root")]
+        public string Root { get; set; } = "HKLM";
+
+        [YamlMember(Alias = "key")]
+        public string Key { get; set; } = string.Empty;
+
+        // Value name; omit for the key's default value.
+        [YamlMember(Alias = "value")]
+        public string? Value { get; set; }
+
+        // Registry view: 32, 64, or omitted for the package's own platform.  A 32-bit
+        // product installed on 64-bit Windows writes under WOW6432Node, which only the
+        // 32-bit view sees from an x64 package.
+        [YamlMember(Alias = "bitness")]
+        public int? Bitness { get; set; }
     }
 
     // -----------------------------------------------------------------------

@@ -7,7 +7,7 @@ namespace AlliePack
     /// <summary>
     /// WXS post-processing for features WixSharp has no first-class model for:
     /// the Finish-page launch checkbox, programs run after install, install-time XML
-    /// edits, file associations, and standard-UI artwork.  Actions reference installed files by File Id;
+    /// edits, file associations, prerequisite checks, and standard-UI artwork.  Actions reference installed files by File Id;
     /// <see cref="InstallerBuilder"/> pins those Ids before the source is generated.
     /// </summary>
     internal class InstallerExtras
@@ -19,17 +19,21 @@ namespace AlliePack
         public List<(string FileId, string? Args, string Condition)> RunAfterInstall { get; } = new();
         public List<(string FileId, string Path, string? Name, string Value)> XmlEdits { get; } = new();
         public List<FileAssociation> FileAssociations { get; } = new();
+        public List<RequirementConfig> Requirements { get; } = new();
         public string? BannerBmp { get; set; }
         public string? DialogBmp { get; set; }
 
         public bool HasAny =>
             LaunchOnExit != null || RunAfterInstall.Any() || XmlEdits.Any() || FileAssociations.Any()
-            || BannerBmp != null || DialogBmp != null;
+            || Requirements.Any() || BannerBmp != null || DialogBmp != null;
 
         public void Apply(XDocument doc)
         {
             var package = doc.Descendants(Wix + "Package").FirstOrDefault();
             if (package == null) return;
+
+            for (int i = 0; i < Requirements.Count; i++)
+                AddRequirement(package, Requirements[i], i + 1);
 
             if (BannerBmp != null) AddWixVariable(package, "WixUIBannerBmp", BannerBmp);
             if (DialogBmp != null) AddWixVariable(package, "WixUIDialogBmp", DialogBmp);
@@ -127,6 +131,44 @@ namespace AlliePack
                 component.Add(progId);
             }
         }
+
+        /// <summary>
+        /// AppSearch property plus LaunchCondition.  With Type="directory" the search sets the
+        /// property only when the directory the value names exists; a nested FileSearch narrows
+        /// that to the file existing in it.  "Installed OR" keeps the check off uninstall,
+        /// repair and modify, so a product whose prerequisite was removed can still be removed.
+        /// </summary>
+        internal static void AddRequirement(XElement package, RequirementConfig req, int index)
+        {
+            string property = "APREQUIRES" + index;
+            var reg = new XElement(Wix + "RegistrySearch",
+                new XAttribute("Id", "apRequires" + index + "Reg"),
+                new XAttribute("Root", req.Registry.Root.ToUpperInvariant()),
+                new XAttribute("Key", req.Registry.Key),
+                new XAttribute("Type", "directory"));
+            if (!string.IsNullOrEmpty(req.Registry.Value))
+                reg.Add(new XAttribute("Name", req.Registry.Value));
+            if (req.Registry.Bitness is int bits)
+                reg.Add(new XAttribute("Bitness", bits == 32 ? "always32" : "always64"));
+            if (!string.IsNullOrEmpty(req.File))
+                reg.Add(new XElement(Wix + "FileSearch",
+                    new XAttribute("Id", "apRequires" + index + "File"),
+                    new XAttribute("Name", req.File)));
+
+            package.Add(new XElement(Wix + "Property",
+                new XAttribute("Id", property),
+                new XAttribute("Secure", "yes"),
+                reg));
+
+            package.Add(new XElement(Wix + "Launch",
+                new XAttribute("Condition", $"Installed OR {property}"),
+                new XAttribute("Message", RequirementMessage(req))));
+        }
+
+        internal static string RequirementMessage(RequirementConfig req) =>
+            !string.IsNullOrWhiteSpace(req.Message)
+                ? req.Message!
+                : $"{req.Name} must be installed first. Install {req.Name}, then run this setup again.";
 
         static XElement? FindFile(XDocument doc, string fileId) =>
             doc.Descendants(Wix + "File").FirstOrDefault(f => (string?)f.Attribute("Id") == fileId);
