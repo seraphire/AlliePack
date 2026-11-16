@@ -2320,7 +2320,7 @@ Write-Host ""Done: $msiPath""
             return child;
         }
 
-        private List<ResolvedFile> DeduplicateFiles(List<ResolvedFile> files)
+        internal List<ResolvedFile> DeduplicateFiles(List<ResolvedFile> files)
         {
             var dict = new Dictionary<string, ResolvedFile>(StringComparer.OrdinalIgnoreCase);
             int duplicateCount = 0;
@@ -2335,6 +2335,7 @@ Write-Host ""Done: $msiPath""
                     {
                         existing.DuplicateSignModes.Add(file.SignMode);
                         existing.DuplicateSignModes.AddRange(file.DuplicateSignModes);
+                        existing.MergeFeaturesFrom(file);
                         duplicateCount++;
                         continue; 
                     }
@@ -2582,7 +2583,7 @@ Write-Host ""Done: $msiPath""
                 if (parts.Length == 1)
                 {
                     var wixFile = new File(file.SourcePath);
-                    if (file.WixFeature != null) wixFile.Feature = file.WixFeature;
+                    AssignFeatures(wixFile, file);
                     string fileName = Path.GetFileName(file.SourcePath);
                     string? sfn = GenerateShortName(fileName, seenNames[""]);
                     if (sfn != null)
@@ -2609,7 +2610,7 @@ Write-Host ""Done: $msiPath""
 
                     if (!seenNames.ContainsKey(currentPath)) seenNames[currentPath] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     var wixFile = new File(file.SourcePath);
-                    if (file.WixFeature != null) wixFile.Feature = file.WixFeature;
+                    AssignFeatures(wixFile, file);
                     string fileName = Path.GetFileName(file.SourcePath);
                     string? sfn = GenerateShortName(fileName, seenNames[currentPath]);
                     if (sfn != null)
@@ -2627,6 +2628,20 @@ Write-Host ""Done: $msiPath""
             entities.AddRange(rootDirs);
             entities.AddRange(rootFiles);
             return (entities, fileMap);
+        }
+
+        /// <summary>
+        /// One feature keeps the single-feature form, so existing output is unchanged;
+        /// several give one component with a ComponentRef in each feature.  No feature
+        /// leaves the file in WixSharp's default (Complete) feature.
+        /// </summary>
+        internal static void AssignFeatures(File wixFile, ResolvedFile file)
+        {
+            if (file.WixFeature == null) return;
+            if (file.ExtraFeatures.Count == 0)
+                wixFile.Feature = file.WixFeature;
+            else
+                wixFile.Features = new[] { file.WixFeature }.Concat(file.ExtraFeatures).ToArray();
         }
 
         private Dir GetOrCreateDir(List<Dir> list, string name, HashSet<string> seen)
