@@ -6,7 +6,12 @@ Configs that omit it are unaffected.
 
 ## Configuration
 
-Exactly one signing provider must be chosen:
+At most one signing provider may be named.  With none, AlliePack uses the only
+code-signing certificate in `CurrentUser\My` (see [Help/signing.md](../Help/signing.md#choosing-the-certificate-automatically)).
+`files.mode:` (`always | ifUnsigned | never`), `package:` (whether the MSI is
+signed, and an optional second key), `sign:` on entries, `inPlace:`, signing an
+exported WXS, and the `--sign-files`, `--sign-package`, `--sign-cert`,
+`--sign-in-place` and `--no-sign` flags are described there too.
 
 | Provider | Description |
 |---|---|
@@ -17,25 +22,26 @@ Exactly one signing provider must be chosen:
 
 ### File signing (optional)
 
-Add a `files:` subsection to sign individual binaries **before** they are
-packaged into the MSI.  When absent, only the MSI itself is signed.
+Packaged files are signed **before** they are packaged into the MSI, as set by
+`files.mode` and by `sign:` on entries.  `files.include` and `files.exclude`
+filter which files may be signed at all.
 
 ```yaml
 signing:
   thumbprint: "ABCDEF1234567890ABCDEF1234567890ABCDEF12"
   timestampUrl: "http://timestamp.digicert.com"
   files:
-    mode: unsigned                  # default: skip already-signed files
     include: ["*.exe", "*.dll"]     # omit to let Windows decide (see below)
     exclude: ["*.resources.dll"]    # always applied on top of include
 ```
 
 **`mode`**
 
-| Value | Behaviour |
+| Value | Effect |
 |---|---|
-| `unsigned` (default) | Skip files that already carry an Authenticode signature.  Safe for third-party and Microsoft DLLs you redistribute. |
-| `all` | Sign every candidate file, replacing any existing signature. |
+| `ifUnsigned` (default; `unsigned`) | Skip files that already carry an Authenticode signature. |
+| `always` (`all`) | Sign every candidate file, replacing any existing signature. |
+| `never` | Sign only entries marked `sign:`. |
 
 **`include`**
 
@@ -55,12 +61,13 @@ qualify.
 ### Signing order
 
 ```
-sign files in-place  ->  BuildMsi()  ->  sign MSI
+copy to obj\AlliePack\<config>\signed  ->  sign copies  ->  BuildMsi()  ->  sign MSI
 ```
 
-Files are signed in their original build output locations before WiX reads
-them.  This is the standard practice across the Windows packaging ecosystem
-(electron-builder, Advanced Installer, Azure DevOps signing tasks).
+By default the files to sign are copied first and the copies are signed and
+packaged, so source folders (build output, checked-in redistributables) are
+never modified.  With `inPlace: true` or `--sign-in-place` the source files are
+signed where they are instead.
 
 ### Diagnostic output
 
@@ -68,7 +75,7 @@ AlliePack prints a status line for every file it signs or skips during the
 file signing step.  Pass `--verbose` to see skipped files as well.
 
 ```
-Signing packaged files...
+Signing packaged files (copies in obj\AlliePack\<config>\signed)...
   [signed  ] MyApp.exe
   [signed  ] MyLib.dll
   [skip    ] notepad.exe -- already signed
@@ -79,8 +86,10 @@ Signing packaged files...
 ```
 
 `[failed]` lines are always shown regardless of verbosity.  A signing failure
-aborts the build after all files have been attempted so you see the full list
-of failures in one pass.
+stops the step at once.  With the signtool providers the first file is signed
+on its own and the rest in batches, one `signtool` run per batch, so a wrong
+hardware-token password is not retried for every file.  A `command:` provider
+runs once per file and also stops at the first failure.
 
 ### Certificate store (thumbprint)
 
@@ -137,7 +146,7 @@ signing:
     correlationId: "$(BUILD_ID)"   # optional; supports tokens; useful for audit tracing
   timestampUrl: "http://timestamp.acs.microsoft.com"
   files:
-    mode: unsigned
+    mode: ifUnsigned
     include: ["*.exe", "*.dll"]
 ```
 

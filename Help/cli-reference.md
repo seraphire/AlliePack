@@ -131,11 +131,39 @@ AlliePack.exe allie-pack.yaml --keep-wxs
 
 ### `--strict`
 
-Turn warnings about content that builds but will fail at install time into errors. Currently this covers a `perUser` package that contains content needing admin rights: per-machine paths such as `[ProgramFiles64Folder]` or `[CommonAppDataFolder]`, `HKLM`/`HKU` registry values, `scope: machine` environment variables, and services. Without `--strict` each is a warning.
+Turn warnings about content that builds but will fail at install time into errors. Currently this covers a `perUser` package that contains content needing admin rights: per-machine paths such as `[ProgramFiles64Folder]` or `[CommonAppDataFolder]`, `HKLM`/`HKU` registry values, `scope: machine` environment variables, and services. It also covers a file reached from entries with different `sign:` values, which otherwise is signed with the stronger one. Without `--strict` each is a warning.
 
 ```
 AlliePack.exe allie-pack.yaml --strict
 ```
+
+### `--sign-files <mode>`
+
+How packaged files are signed: `always` (every signable file), `ifUnsigned` (files with no signature yet) or `never`. Overrides `signing.files.mode` and every entry's `sign:`; `signing.files.exclude` still applies. Turns signing on even when the config has no `signing:` block; the certificate is then picked as described in [Signing](signing.md#choosing-the-certificate-automatically). Without a block, `always` and `ifUnsigned` also sign the MSI.
+
+```
+AlliePack.exe allie-pack.yaml --sign-files ifUnsigned
+```
+
+### `--sign-package yes|no`
+
+Whether the MSI is signed. Overrides `signing.package.sign`. Without a `signing:` block, `--sign-package yes` alone signs only the MSI.
+
+### `--sign-cert <thumbprint>`
+
+SHA1 thumbprint (40 hex digits) of a certificate in `CurrentUser\My`; anything else is an error. Replaces whatever provider `signing:` and `signing.package:` name (`thumbprint`, `pfx`, `azure` or `command`), so the files and the MSI both use it. With no `signing:` block it also turns signing on: copies of packaged files without a signature, then the MSI; add `--sign-files never` to sign only the MSI. With a block, the block's `files.mode`, `package.sign` and `inPlace` still apply. Spaces and the invisible mark that certmgr adds when you copy a thumbprint are removed.
+
+```
+AlliePack.exe allie-pack.yaml --sign-cert "ab cd ef ..."
+```
+
+### `--no-sign`
+
+Sign nothing, even when the config has a `signing:` block. Same as `--sign-files never --sign-package no`; passing it with `--sign-files always`, `--sign-files ifUnsigned` or `--sign-package yes` is an error.
+
+### `--sign-in-place`
+
+Sign the packaged files where they are, instead of signing copies in `obj\AlliePack\<config>\signed`. Same as `signing.inPlace: true`.
 
 ### `--export-wxs`
 

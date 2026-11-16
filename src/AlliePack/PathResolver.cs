@@ -15,6 +15,12 @@ namespace AlliePack
 
         public string WorkingDirectory => _gitRoot ?? _yamlDir;
 
+        /// <summary>The folder that holds the config file.</summary>
+        public string YamlDirectory => _yamlDir;
+
+        /// <summary>The config file's name without extension.</summary>
+        public string YamlFileStem { get; }
+
         /// <summary>
         /// Plain token substitution without path normalization.
         /// Use this for non-path string fields (e.g. MSBuild configuration,
@@ -32,6 +38,7 @@ namespace AlliePack
                             Dictionary<string, string>? defines = null)
         {
             _yamlDir = Path.GetDirectoryName(Path.GetFullPath(yamlFilePath)) ?? Environment.CurrentDirectory;
+            YamlFileStem = Path.GetFileNameWithoutExtension(yamlFilePath);
             _gitRoot = FindGitRoot(_yamlDir);
             _aliases = aliases;
 

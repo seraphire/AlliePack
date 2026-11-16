@@ -171,6 +171,7 @@ namespace AlliePack.Tests
                 {
                     Pfx         = pfxPath,
                     PfxPassword = password,
+                    InPlace     = true,
                     Files = new FileSigningConfig
                     {
                         Mode    = "all",
@@ -178,12 +179,9 @@ namespace AlliePack.Tests
                     }
                 };
 
-                var files = new List<ResolvedFile>
-                {
-                    new ResolvedFile { SourcePath = targetPath, RelativeDestinationPath = "clr.dll" }
-                };
-
-                SigningHelper.SignFiles(files, signing, MakeResolver(), verbose: false);
+                var eff  = SigningHelper.ApplyOverrides(signing, new Options())!;
+                var plan = SigningHelper.PlanFiles(new (string, FileSignMode?)[] { (targetPath, null) }, eff, verbose: false);
+                SigningHelper.SignFiles(plan, eff.Provider, MakeResolver(), verbose: false);
 
                 Assert.True(
                     SigningHelper.HasAuthenticodeSignature(targetPath),

@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
+using System.Text;
 using System.Xml.Linq;
 using WixSharp;
 using WixSharp.CommonTasks;
@@ -19,6 +20,11 @@ namespace AlliePack
         private readonly PathResolver _resolver;
         private readonly SolutionResolver _solutionResolver;
         private readonly Options _options;
+
+        // Signing for this run: null when --no-sign, or nothing at all can be signed.  The plan
+        // lists the packaged files to sign and, once staged, where their copies are.
+        private EffectiveSigning? _signing;
+        private FileSigningPlan? _signPlan;
         private readonly IReadOnlyList<string> _activeFlags;
 
         private void Debug(string message) { if (_options.Debug) Console.WriteLine($"  [debug] {message}"); }
@@ -151,6 +157,25 @@ namespace AlliePack
                 Console.WriteLine($"  [debug]   -> destination paths:");
                 foreach (var f in uniqueFiles)
                     Console.WriteLine($"  [debug]   {f.RelativeDestinationPath}");
+            }
+
+            // --- Signing plan.  Copies are staged now, before any WiX entity is built,
+            // so everything downstream (the MSI, a kept .wxs, an exported .wxs) points
+            // at the copies.  Signing itself happens just before the MSI is built. ---
+            _signing = SigningHelper.ApplyOverrides(_config.Signing, _options);
+            if (_signing != null)
+            {
+                _signPlan = SigningHelper.PlanFiles(CollectSignCandidates(uniqueFiles), _signing, _options.IsVerbose, _options.Strict);
+                if (!_options.ReportOnly && !_signing.InPlace && _signPlan.Files.Count > 0)
+                {
+                    string stagingDir = _options.ExportWxs
+                        ? Path.Combine(GetExportDir(), "signed")
+                        : Path.Combine(_resolver.YamlDirectory, "obj", "AlliePack", _resolver.YamlFileStem, "signed");
+                    SigningHelper.StageCopies(_signPlan, stagingDir);
+                    Debug($"signing: staged {_signPlan.Files.Count} file(s) in {stagingDir}");
+                    foreach (var f in uniqueFiles)
+                        f.SourcePath = _signPlan.Map(f.SourcePath);
+                }
             }
 
             var entities = new List<WixEntity>();
@@ -716,10 +741,22 @@ namespace AlliePack
                 if (_options.KeepWxs || Environment.GetEnvironmentVariable("ALLIEPAK_KEEP_WXS") != null)
                     project.PreserveTempFiles = true;
 
-                if (_config.Signing?.Files != null)
+                var signing = _signing;
+                bool signFiles = _signPlan != null && _signPlan.Files.Count > 0;
+                bool signPackage = signing != null && signing.SignPackage;
+                if (signing != null && (signPackage || signFiles))
                 {
-                    Console.WriteLine("Signing packaged files...");
-                    SigningHelper.SignFiles(uniqueFiles, _config.Signing, _resolver, _options.IsVerbose);
+                    Console.WriteLine($"Code signing (files: {SigningHelper.Name(signing.DefaultFileMode)}, " +
+                                      $"package: {(signPackage ? "signed" : "not signed")})...");
+                    SigningHelper.Prepare(signing, signFiles, _options.IsVerbose);
+                }
+
+                if (signFiles)
+                {
+                    Console.WriteLine(signing!.InPlace
+                        ? "Signing packaged files in place..."
+                        : $@"Signing packaged files (copies in obj\AlliePack\{_resolver.YamlFileStem}\signed)...");
+                    SigningHelper.SignFiles(_signPlan!, signing.Provider, _resolver, _options.IsVerbose);
                 }
 
                 string msiPath = project.BuildMsi();
@@ -730,12 +767,12 @@ namespace AlliePack
                         Console.WriteLine("Warning: ui.launchOnExit: ExitDialog has no OptionalCheckBox; checkbox not moved.");
                 }
 
-                if (_config.Signing != null)
+                if (signPackage)
                 {
                     if (string.IsNullOrEmpty(msiPath) || !System.IO.File.Exists(msiPath))
                         Console.WriteLine($"Warning: Code signing skipped -- MSI not found at: {msiPath}");
                     else
-                        SigningHelper.Sign(msiPath, _config.Signing, _resolver, _options.IsVerbose);
+                        SigningHelper.Sign(msiPath, signing!.Package, _resolver, _options.IsVerbose);
                 }
             }
         }
@@ -755,10 +792,7 @@ namespace AlliePack
         /// </summary>
         private void ExportWxsArtifact(ManagedProject project)
         {
-            // Determine export directory
-            string exportDir = !string.IsNullOrEmpty(_options.OutputPath)
-                ? Path.GetFullPath(_options.OutputPath)
-                : Path.GetFullPath(MakeExportDirName(_config.Product.Name));
+            string exportDir = GetExportDir();
 
             Directory.CreateDirectory(exportDir);
             Console.WriteLine($"Export directory: {exportDir}");
@@ -857,7 +891,8 @@ namespace AlliePack
             // artifact the client compiles with WiX v7 -- the two versions never have to
             // match here.  (The .wix4 token is AlliePack-internal; the NuGet id is .wixext.)
             var extPackageIds = extensions.Select(e => e.Replace(".wix4", ".wixext")).ToList();
-            WriteBuildScript(exportDir, safeName, extPackageIds, wixArch, ResolveAcceptEula());
+            var signParts = BuildSigningScriptParts(exportDir);
+            WriteBuildScript(exportDir, safeName, extPackageIds, wixArch, ResolveAcceptEula(), signParts);
 
             // Build the example wix command for the summary
             string extArgsSummary = extPackageIds.Count > 0
@@ -876,6 +911,42 @@ namespace AlliePack
             Console.WriteLine($"  cd \"{exportDir}\"");
             Console.WriteLine($"  .\\build.ps1 -Version 1.0.0.0");
             Console.WriteLine($"  {exampleCmd}");
+        }
+
+        private string GetExportDir() =>
+            !string.IsNullOrEmpty(_options.OutputPath)
+                ? Path.GetFullPath(_options.OutputPath)
+                : Path.GetFullPath(MakeExportDirName(_config.Product.Name));
+
+        /// <summary>
+        /// Every packaged file with the sign: of its entry: structure files (already
+        /// resolved) and group files (resolved here; BuildGroupDir resolves them again).
+        /// A group whose destination is unknown is left out, as BuildGroupDir skips it.
+        /// </summary>
+        private IEnumerable<(string Path, FileSignMode? Entry)> CollectSignCandidates(List<ResolvedFile> files)
+        {
+            foreach (var f in files)
+            {
+                yield return (f.SourcePath, f.SignMode);
+                foreach (var m in f.DuplicateSignModes)
+                    yield return (f.SourcePath, m);
+            }
+
+            var knownDirs = new HashSet<string>(_config.Directories.Select(d => d.Id), StringComparer.OrdinalIgnoreCase);
+            var groups = _config.Groups.Concat(_config.Features.SelectMany(fc => fc.Groups));
+            foreach (var g in groups)
+            {
+                string dest = (g.DestinationDir ?? string.Empty).Trim();
+                if (!dest.StartsWith("[") && !knownDirs.Contains(dest))
+                    continue;
+
+                FileSignMode? mode = string.IsNullOrWhiteSpace(g.Sign)
+                    ? (FileSignMode?)null
+                    : SigningHelper.ParseFileMode(g.Sign!, $"sign: on group '{g.Id}'");
+                foreach (var item in g.Files)
+                    foreach (var p in _resolver.ResolveGlob(item.Source))
+                        yield return (p, mode);
+            }
         }
 
         /// <summary>
@@ -1556,8 +1627,248 @@ namespace AlliePack
             catch { return null; }
         }
 
-        private static void WriteBuildScript(string exportDir, string safeName, List<string> extensions, string arch, string? eulaId)
+        /// <summary>The signing pieces of build.ps1; all empty when nothing is signed.</summary>
+        internal sealed class SigningScriptParts
         {
+            internal string Params    { get; set; } = string.Empty;  // extra param() entries
+            internal string PreBuild  { get; set; } = string.Empty;  // copy and sign files
+            internal string PostBuild { get; set; } = string.Empty;  // sign the MSI
+        }
+
+        internal static string PsQuote(string s) => "'" + s.Replace("'", "''") + "'";
+
+        /// <summary>
+        /// Export never signs.  build.ps1 copies the planned files from their sources
+        /// into signed\ (the copies the WXS points at), signs them, builds, then signs
+        /// the MSI, on the machine that runs it.  Only the thumbprint provider and the
+        /// automatic choice are supported there; for pfx, azure or command it copies
+        /// and says signing is left to the caller.
+        /// </summary>
+        private SigningScriptParts BuildSigningScriptParts(string exportDir)
+        {
+            var sig = _signing;
+            IReadOnlyList<SignCandidate> files = _signPlan?.Files ?? new List<SignCandidate>();
+            if (sig == null || (!sig.SignPackage && files.Count == 0))
+                return new SigningScriptParts();
+
+            var rows = files.Select(f => (MakeRelativePath(exportDir, f.Source),
+                                          MakeRelativePath(exportDir, f.Path),
+                                          SigningHelper.Name(f.Mode))).ToList();
+            return ComposeSigningScript(rows, sig.Provider, sig.SignPackage ? sig.Package : null, sig.PackageInherits);
+        }
+
+        private static bool ScriptSupports(SigningConfig p) =>
+            string.IsNullOrEmpty(p.Pfx) && p.Azure == null && string.IsNullOrEmpty(p.Command);
+
+        private static string ProviderKind(SigningConfig p) =>
+            !string.IsNullOrEmpty(p.Pfx) ? "pfx" : p.Azure != null ? "azure" : "command";
+
+        /// <summary>
+        /// Builds the build.ps1 signing pieces from relative (Source, Path, Mode) rows.
+        /// <paramref name="package"/> is the MSI's key, or null when the MSI is not signed;
+        /// <paramref name="packageInherits"/> says it is the files' key rather than its own.
+        /// </summary>
+        internal static SigningScriptParts ComposeSigningScript(
+            IReadOnlyList<(string Source, string Path, string Mode)> rows,
+            SigningConfig files,
+            SigningConfig? package,
+            bool packageInherits = true)
+        {
+            var parts = new SigningScriptParts();
+            var sb = new StringBuilder();
+            if (rows.Count > 0)
+            {
+                sb.Append(PsSignFilesHeader);
+                sb.Append("$signFiles = @(\n");
+                foreach (var r in rows)
+                    sb.Append($"    @{{ Source = {PsQuote(r.Source)}; Path = {PsQuote(r.Path)}; Mode = {PsQuote(r.Mode)} }}\n");
+                sb.Append(")\n");
+                sb.Append(PsCopyBlock);
+            }
+
+            bool filesHere   = rows.Count > 0 && ScriptSupports(files);
+            bool packageHere = package != null && ScriptSupports(package);
+
+            if (rows.Count > 0 && !filesHere)
+            {
+                string which = ProviderKind(files);
+                Console.WriteLine($"Warning: signing.{which} is not supported by the exported build.ps1. It packages " +
+                                  "unsigned files; sign them in your own pipeline.");
+                sb.Append($"\nWrite-Host 'Packaged files are not signed here (signing.{which} is not supported by this script). " +
+                          "Sign them before release.'\n");
+            }
+            if (package != null && !packageHere)
+            {
+                string which = (packageInherits ? "signing." : "signing.package.") + ProviderKind(package);
+                Console.WriteLine($"Warning: {which} is not supported by the exported build.ps1. It builds an " +
+                                  "unsigned MSI; sign it in your own pipeline.");
+                sb.Append($"\nWrite-Host 'The MSI is not signed here ({which} is not supported by this script). " +
+                          "Sign it before release.'\n");
+            }
+            if (!filesHere && !packageHere)
+            {
+                parts.PreBuild = sb.ToString();
+                return parts;
+            }
+
+            parts.Params =
+                ",\n    [switch]$SkipSigning" +
+                $",\n    [string]$Thumbprint = {PsQuote(files.Thumbprint ?? string.Empty)}" +
+                $",\n    [string]$TimestampUrl = {PsQuote(files.TimestampUrl ?? string.Empty)}" +
+                $",\n    [string]$PackageThumbprint = {PsQuote(packageInherits ? string.Empty : package?.Thumbprint ?? string.Empty)}" +
+                $",\n    [string]$PackageTimestampUrl = {PsQuote(packageInherits ? string.Empty : package?.TimestampUrl ?? string.Empty)}" +
+                ",\n    [string]$SignTool = ''";
+
+            sb.Append($"\n$signPackagedFiles = {(filesHere ? "$true" : "$false")}\n");
+            sb.Append(PsSignSetup);
+            if (filesHere)
+                sb.Append(PsSignFilesBlock);
+            parts.PreBuild = sb.ToString();
+            parts.PostBuild = packageHere ? PsSignMsiBlock : package == null ? PsSkipNoteBlock : string.Empty;
+            return parts;
+        }
+
+        private const string PsSignFilesHeader = @"
+# --- Packaged files to sign -------------------------------------------------
+# Source is where AlliePack found the file; Path is what the WXS packages.
+# Both are relative to this folder.  When they differ the file is copied first,
+# so a rebuilt source is picked up.  Mode: always | ifUnsigned.
+";
+
+        private const string PsCopyBlock = @"
+function Resolve-Here([string]$p) {
+    if ([System.IO.Path]::IsPathRooted($p)) { return $p }
+    return (Join-Path $scriptDir $p)
+}
+
+foreach ($f in $signFiles) {
+    if ($f.Source -eq $f.Path) { continue }
+    $src = Resolve-Here $f.Source
+    $dst = Resolve-Here $f.Path
+    if (Test-Path -LiteralPath $src) {
+        New-Item -ItemType Directory -Force -Path (Split-Path $dst) | Out-Null
+        Copy-Item -LiteralPath $src -Destination $dst -Force
+        Set-ItemProperty -LiteralPath $dst -Name IsReadOnly -Value $false
+    } elseif (Test-Path -LiteralPath $dst) {
+        Write-Host ""Warning: $($f.Source) not found; packaging the copy made at export time.""
+    } else {
+        Write-Host ""Missing: $($f.Source)""
+        exit 1
+    }
+}
+";
+
+        private const string PsSignSetup = @"
+function Find-SignTool {
+    if ($SignTool) { return $SignTool }
+    $cmd = Get-Command signtool.exe -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    foreach ($root in @(""${env:ProgramFiles(x86)}\Windows Kits\10\bin"", ""$env:ProgramFiles\Windows Kits\10\bin"")) {
+        if (-not (Test-Path -LiteralPath $root)) { continue }
+        foreach ($ver in (Get-ChildItem -LiteralPath $root -Directory | Sort-Object Name -Descending)) {
+            foreach ($arch in @('x64', 'x86')) {
+                $c = Join-Path $ver.FullName ""$arch\signtool.exe""
+                if (Test-Path -LiteralPath $c) { return $c }
+            }
+        }
+    }
+    return $null
+}
+
+# Stops at the first failure: on a hardware token every failed attempt can use
+# up one of the token's password retries.
+function Invoke-Sign([string[]]$files) {
+    & $signToolExe @signArgs @files
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host ""signtool failed (exit $LASTEXITCODE). Stopped at the first failure.""
+        exit $LASTEXITCODE
+    }
+}
+
+if (-not $SkipSigning) {
+    $signToolExe = Find-SignTool
+    if (-not $signToolExe) {
+        Write-Host 'signtool.exe not found. Install the Windows SDK, pass -SignTool, or pass -SkipSigning.'
+        exit 1
+    }
+    # The files need -Thumbprint; so does the MSI unless -PackageThumbprint names its own.
+    if (-not $Thumbprint -and ($signPackagedFiles -or -not $PackageThumbprint)) {
+        $now = Get-Date
+        $certs = @(Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert |
+            Where-Object { $_.HasPrivateKey -and $_.NotBefore -le $now -and $_.NotAfter -ge $now })
+        if ($certs.Count -ne 1) {
+            Write-Host ""No -Thumbprint given, and CurrentUser\My has $($certs.Count) usable code-signing certificates. Pass -Thumbprint:""
+            foreach ($c in $certs) { Write-Host ""  $($c.Thumbprint)  $($c.Subject)"" }
+            exit 1
+        }
+        $Thumbprint = $certs[0].Thumbprint
+        Write-Host ""Certificate: $($certs[0].Subject) ($Thumbprint)""
+    }
+    function New-SignArgs([string]$tp, [string]$ts) {
+        $a = @('sign', '/sha1', $tp, '/fd', 'sha256')
+        if ($ts) { $a += @('/tr', $ts, '/td', 'sha256') }
+        return $a
+    }
+    $signArgs = New-SignArgs $Thumbprint $TimestampUrl
+}
+";
+
+        private const string PsSignFilesBlock = @"
+if (-not $SkipSigning) {
+    $toSign = @()
+    foreach ($f in $signFiles) {
+        $p = Resolve-Here $f.Path
+        if ($f.Mode -eq 'ifUnsigned' -and (Get-AuthenticodeSignature -LiteralPath $p).Status -ne 'NotSigned') {
+            Write-Host ""Already signed: $($f.Path)""
+            continue
+        }
+        $toSign += $p
+    }
+    if ($toSign.Count -gt 0) {
+        # The first file alone, so a wrong password or certificate fails on one file;
+        # then the rest in batches that keep the command line under its limit.
+        Invoke-Sign @($toSign[0])
+        $batch = @()
+        $len = 0
+        foreach ($p in ($toSign | Select-Object -Skip 1)) {
+            if ($batch.Count -gt 0 -and ($len + $p.Length + 3) -gt 30000) {
+                Invoke-Sign $batch
+                $batch = @()
+                $len = 0
+            }
+            $batch += $p
+            $len += $p.Length + 3
+        }
+        if ($batch.Count -gt 0) { Invoke-Sign $batch }
+        Write-Host ""Signed $($toSign.Count) packaged file(s).""
+    }
+}
+";
+
+        private const string PsSignMsiBlock = @"
+if (-not $SkipSigning) {
+    if ($PackageThumbprint) {
+        $pkgTs = $TimestampUrl
+        if ($PackageTimestampUrl) { $pkgTs = $PackageTimestampUrl }
+        $signArgs = New-SignArgs $PackageThumbprint $pkgTs
+    }
+    Invoke-Sign @($msiPath)
+    Write-Host ""Signed: $msiPath""
+} else {
+    Write-Host 'Signing skipped (-SkipSigning). Sign the packaged files and the MSI before release.'
+}
+";
+
+        private const string PsSkipNoteBlock = @"
+if ($SkipSigning) {
+    Write-Host 'Signing skipped (-SkipSigning). Sign the packaged files before release.'
+}
+";
+
+        internal static void WriteBuildScript(string exportDir, string safeName, List<string> extensions, string arch, string? eulaId,
+                                              SigningScriptParts? signing = null)
+        {
+            signing ??= new SigningScriptParts();
             // Rules (global CLAUDE.md): set UTF-8 mode for any script that outputs text.
             // IMPORTANT: param() must be the very first statement in a PowerShell script.
             // Use {{ / }} to escape braces inside a C# interpolated verbatim string.
@@ -1638,7 +1949,7 @@ $@"# ---------------------------------------------------------------------------
 # ------------------------------------------------------------------------------
 param(
     [Parameter(Mandatory)][string]$Version,
-    [string]$OutputPath = ''
+    [string]$OutputPath = ''{signing.Params}
 )
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -1655,7 +1966,7 @@ if (-not (Get-Command wix.exe -ErrorAction SilentlyContinue)) {{
 }}
 
 if (-not $OutputPath) {{ $OutputPath = $scriptDir }}
-{prepBlock}{eulaBlock}{extAddBlock}
+{prepBlock}{eulaBlock}{extAddBlock}{signing.PreBuild}
 $msiName = '{safeName}-' + $Version + '.msi'
 $msiPath = Join-Path $OutputPath $msiName
 
@@ -1672,7 +1983,7 @@ try {{
 }} finally {{
     Pop-Location
 }}
-
+{signing.PostBuild}
 Write-Host ""Done: $msiPath""
 ";
             System.IO.File.WriteAllText(
@@ -1857,7 +2168,7 @@ Write-Host ""Done: $msiPath""
                 bool neverOverwrite = string.Equals(group.Condition, "notExists", StringComparison.OrdinalIgnoreCase);
                 foreach (var filePath in resolved)
                 {
-                    var wf = new File(filePath);
+                    var wf = new File(_signPlan?.Map(filePath) ?? filePath);
                     if (feature != null) wf.Feature = feature;
                     if (!string.IsNullOrEmpty(item.Rename)) wf.Name = item.Rename;
                     var attrs = new List<string>();
@@ -1989,6 +2300,8 @@ Write-Host ""Done: $msiPath""
                     // Check if they are the same file
                     if (IsSameFile(file.SourcePath, existing.SourcePath))
                     {
+                        existing.DuplicateSignModes.Add(file.SignMode);
+                        existing.DuplicateSignModes.AddRange(file.DuplicateSignModes);
                         duplicateCount++;
                         continue; 
                     }
@@ -2057,9 +2370,15 @@ Write-Host ""Done: $msiPath""
             }
         }
 
-        private List<ResolvedFile> ProcessElement(StructureElement element, string currentPath = "")
+        private List<ResolvedFile> ProcessElement(StructureElement element, string currentPath = "",
+                                                  FileSignMode? inheritedSign = null)
         {
             var result = new List<ResolvedFile>();
+
+            // sign: is inherited by contents:; the nearest setting wins.
+            FileSignMode? sign = string.IsNullOrWhiteSpace(element.Sign)
+                ? inheritedSign
+                : SigningHelper.ParseFileMode(element.Sign!, $"sign: on {DescribeElement(element)}");
             
             string newPath = currentPath;
             if (!string.IsNullOrEmpty(element.FolderName))
@@ -2074,9 +2393,11 @@ Write-Host ""Done: $msiPath""
             {
                 foreach (var child in element.Contents)
                 {
-                    result.AddRange(ProcessElement(child, newPath));
+                    result.AddRange(ProcessElement(child, newPath, sign));
                 }
             }
+
+            int ownStart = result.Count;
 
             if (!string.IsNullOrEmpty(element.Source))
             {
@@ -2198,8 +2519,18 @@ Write-Host ""Done: $msiPath""
                 result.AddRange(projFiles);
             }
 
+            // Contents already carry their own (inherited) setting.
+            for (int i = ownStart; i < result.Count; i++)
+                result[i].SignMode = sign;
+
             return result;
         }
+
+        private static string DescribeElement(StructureElement e) =>
+            e.Source   != null ? $"source '{e.Source}'" :
+            e.Project  != null ? $"project '{e.Project}'" :
+            e.Solution != null ? $"solution '{e.Solution}'" :
+            e.FolderName != null ? $"folder '{e.FolderName}'" : "a structure entry";
 
         private (List<WixEntity> entities, Dictionary<string, File> fileMap) ConvertResolvedFilesToEntities(List<ResolvedFile> files, string installPath)
         {
@@ -2626,6 +2957,14 @@ Write-Host ""Done: $msiPath""
             return issues;
         }
 
+        // The report's one-line description of a signing key.
+        private static string DescribeSigningMethod(SigningConfig p) =>
+            !string.IsNullOrEmpty(p.Thumbprint) ? $"thumbprint ({p.Thumbprint})"
+            : !string.IsNullOrEmpty(p.Pfx)      ? $"pfx ({p.Pfx})"
+            : p.Azure != null                   ? $"azure ({p.Azure.Account} / {p.Azure.CertificateProfile})"
+            : !string.IsNullOrEmpty(p.Command)  ? "command"
+            : SigningHelper.DescribeAutoCertificate();
+
         /// <summary>
         /// Warns about each perUser admin requirement, or fails the build under --strict.
         /// </summary>
@@ -2953,27 +3292,46 @@ Write-Host ""Done: $msiPath""
                     groupDests.Where(x => !IsInstallDirDestination(x.Dest)).ToList());
             }
 
-            if (_config.Signing != null)
+            var sig  = _signing;
+            var plan = _signPlan;
+            bool anySigning = sig != null && (sig.SignPackage || (plan != null && plan.Files.Count > 0));
+            if (!anySigning && (_config.Signing != null || _options.NoSign ||
+                                !string.IsNullOrWhiteSpace(_options.SignFiles) || !string.IsNullOrWhiteSpace(_options.SignPackage)))
             {
-                var s = _config.Signing;
+                Console.WriteLine("Code Signing: off (no files and no MSI to sign)");
+            }
+            else if (anySigning)
+            {
+                var p = sig!.Provider;
                 Console.WriteLine("Code Signing:");
-                if (!string.IsNullOrEmpty(s.Thumbprint))
-                    Console.WriteLine($"  method    : thumbprint ({s.Thumbprint})");
-                else if (!string.IsNullOrEmpty(s.Pfx))
-                    Console.WriteLine($"  method    : pfx ({s.Pfx})");
-                if (!string.IsNullOrEmpty(s.TimestampUrl))
-                    Console.WriteLine($"  timestamp : {s.TimestampUrl}");
-                if (!string.IsNullOrEmpty(s.SignToolPath))
-                    Console.WriteLine($"  signtool  : {s.SignToolPath}");
-                if (s.Files != null)
+                Console.WriteLine($"  files     : default {SigningHelper.Name(sig.DefaultFileMode)}" +
+                                  (sig.FileModeFromCommandLine ? " (--sign-files; entry sign: values ignored)" : ""));
+                Console.WriteLine($"  method    : {DescribeSigningMethod(p)}");
+                if (!string.IsNullOrEmpty(p.TimestampUrl))
+                    Console.WriteLine($"  timestamp : {p.TimestampUrl}");
+                if (!string.IsNullOrEmpty(p.SignToolPath))
+                    Console.WriteLine($"  signtool  : {p.SignToolPath}");
+                if (!sig.SignPackage)
+                    Console.WriteLine("  package   : not signed");
+                else if (sig.PackageInherits)
+                    Console.WriteLine("  package   : signed, same key");
+                else
                 {
-                    Console.WriteLine($"  files     : mode={s.Files.Mode}");
-                    if (s.Files.Include != null)
-                        Console.WriteLine($"    include : {string.Join(", ", s.Files.Include)}");
-                    else
-                        Console.WriteLine($"    include : (SIP check -- signable files only)");
-                    if (s.Files.Exclude.Any())
-                        Console.WriteLine($"    exclude : {string.Join(", ", s.Files.Exclude)}");
+                    var k = sig.Package;
+                    Console.WriteLine($"  package   : signed with {DescribeSigningMethod(k)}");
+                    if (!string.IsNullOrEmpty(k.TimestampUrl) && k.TimestampUrl != p.TimestampUrl)
+                        Console.WriteLine($"    timestamp: {k.TimestampUrl}");
+                }
+                if (plan != null)
+                {
+                    int always = plan.Files.Count(f => f.Mode == FileSignMode.Always);
+                    Console.WriteLine($"  to sign   : {plan.Files.Count} file(s) ({always} always, {plan.Files.Count - always} ifUnsigned), " +
+                                      (sig.InPlace ? "in place" : $@"as copies in obj\AlliePack\{_resolver.YamlFileStem}\signed"));
+                    if (plan.Filtered > 0)   Console.WriteLine($"    filtered: {plan.Filtered} by signing.files include/exclude");
+                    if (plan.Unsignable > 0) Console.WriteLine($"    skipped : {plan.Unsignable} not signable");
+                    if (_options.IsVerbose)
+                        foreach (var f in plan.Files)
+                            Console.WriteLine($"    {SigningHelper.Name(f.Mode),-10} {f.Source}");
                 }
             }
 
