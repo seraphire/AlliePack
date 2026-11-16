@@ -145,6 +145,57 @@ namespace AlliePack.Tests
             Assert.Null(xml.Attribute("Name"));
         }
 
+        // Two installed files, each in its own component, under the given directory Ids.
+        private static XDocument TwoFileDoc(string dir1, string dir2) => new XDocument(
+            new XElement(Wix + "Wix",
+                new XElement(Wix + "Package",
+                    new XElement(Wix + "Directory", new XAttribute("Id", dir1),
+                        new XElement(Wix + "Component",
+                            new XElement(Wix + "File", new XAttribute("Id", "apFile1")))),
+                    dir1 == dir2
+                        ? null
+                        : new XElement(Wix + "Directory", new XAttribute("Id", dir2)),
+                    new XElement(Wix + "DirectoryRef", new XAttribute("Id", dir2),
+                        new XElement(Wix + "Component",
+                            new XElement(Wix + "File", new XAttribute("Id", "apFile2")))))));
+
+        [Fact]
+        public void CopyFiles_SameDestinationInOneDirectory_FromDifferentAnchors_Throws()
+        {
+            var doc = TwoFileDoc("INSTALLDIR", "INSTALLDIR");
+            var extras = new InstallerExtras();
+            extras.CopyFiles.Add(("apFile1", "VB6.EXE", "gmVB6.exe", "[INSTALLDIR]\\A.exe"));
+            extras.CopyFiles.Add(("apFile2", "OTHER.EXE", "GMVB6.EXE", "[INSTALLDIR]\\B.exe"));
+
+            var ex = Assert.Throws<System.InvalidOperationException>(() => extras.Apply(doc));
+            Assert.Contains("INSTALLDIR", ex.Message);
+            Assert.Contains("entry 1 (VB6.EXE -> gmVB6.exe, beside [INSTALLDIR]\\A.exe)", ex.Message);
+            Assert.Contains("entry 2 (OTHER.EXE -> GMVB6.EXE, beside [INSTALLDIR]\\B.exe)", ex.Message);
+            Assert.Empty(doc.Descendants(Wix + "CopyFile"));
+        }
+
+        [Fact]
+        public void CopyFiles_SameDestinationInDifferentDirectories_EmitsOnePairEach()
+        {
+            var doc = TwoFileDoc("INSTALLDIR", "BINDIR");
+            var extras = new InstallerExtras();
+            extras.CopyFiles.Add(("apFile1", "VB6.EXE", "gmVB6.exe", "[INSTALLDIR]\\A.exe"));
+            extras.CopyFiles.Add(("apFile2", "VB6.EXE", "gmVB6.exe", "[INSTALLDIR]\\bin\\B.exe"));
+            extras.Apply(doc);
+
+            var copies = doc.Descendants(Wix + "CopyFile").ToList();
+            Assert.Equal(2, copies.Count);
+            Assert.Equal("INSTALLDIR", (string?)copies[0].Attribute("DestinationDirectory"));
+            Assert.Equal("BINDIR",     (string?)copies[1].Attribute("DestinationDirectory"));
+            Assert.Equal("apFile1", (string?)copies[0].Parent!.Element(Wix + "File")!.Attribute("Id"));
+            Assert.Equal("apFile2", (string?)copies[1].Parent!.Element(Wix + "File")!.Attribute("Id"));
+
+            var removes = doc.Descendants(Wix + "RemoveFile").ToList();
+            Assert.Equal(2, removes.Count);
+            Assert.Equal("INSTALLDIR", (string?)removes[0].Attribute("Directory"));
+            Assert.Equal("BINDIR",     (string?)removes[1].Attribute("Directory"));
+        }
+
         [Fact]
         public void Artwork_AddsWixVariables()
         {

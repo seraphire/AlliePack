@@ -656,7 +656,7 @@ namespace AlliePack
             foreach (var cf in _config.CopyFiles)
             {
                 if (PinFileId(cf.File, $"copyFiles '{cf.DestinationName}'") is string id)
-                    extras.CopyFiles.Add((id, cf.SourceName, cf.DestinationName));
+                    extras.CopyFiles.Add((id, cf.SourceName, cf.DestinationName, cf.File));
             }
             ValidateRequirements(_config.Requires);
             extras.Requirements.AddRange(_config.Requires);
@@ -2076,9 +2076,11 @@ Write-Host ""Done: $msiPath""
             return si;
         }
 
+        // Duplicate destinations are checked in InstallerExtras.Apply, against the resolved
+        // directory of each anchor file; the anchor paths here cannot show that two different
+        // files share a directory.
         internal static void ValidateCopyFiles(List<CopyFileConfig> copies)
         {
-            var destinations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var cf in copies)
             {
                 string label = $"copyFiles '{cf.DestinationName}'";
@@ -2093,8 +2095,6 @@ Write-Host ""Done: $msiPath""
                 }
                 if (string.Equals(cf.SourceName, cf.DestinationName, StringComparison.OrdinalIgnoreCase))
                     throw new InvalidOperationException($"{label}: sourceName and destinationName must differ.");
-                if (!destinations.Add(cf.File + "|" + cf.DestinationName))
-                    throw new InvalidOperationException($"{label}: declared more than once.");
             }
         }
 

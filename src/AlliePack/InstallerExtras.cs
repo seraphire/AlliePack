@@ -19,7 +19,8 @@ namespace AlliePack
         public List<(string FileId, string? Args, string Condition)> RunAfterInstall { get; } = new();
         public List<(string FileId, string Path, string? Name, string Value)> XmlEdits { get; } = new();
         public List<FileAssociation> FileAssociations { get; } = new();
-        public List<(string FileId, string SourceName, string DestinationName)> CopyFiles { get; } = new();
+        // File is the anchor path as written in the config; it is used only to name the entry in errors.
+        public List<(string FileId, string SourceName, string DestinationName, string File)> CopyFiles { get; } = new();
         public List<RequirementConfig> Requirements { get; } = new();
         public string? BannerBmp { get; set; }
         public string? DialogBmp { get; set; }
@@ -100,14 +101,38 @@ namespace AlliePack
                 component.Add(xmlFile);
             }
 
+            // Resolve every anchor's directory first.  Two different anchors in one directory
+            // with the same destinationName would emit two copy/remove pairs for one target
+            // file, so the collision is keyed on the resolved directory, not the anchor path.
+            var copyTargets = new List<(XElement Component, string DirId)>();
+            var destinations = new Dictionary<string, int>(System.StringComparer.Ordinal);
             for (int i = 0; i < CopyFiles.Count; i++)
             {
-                var (fileId, sourceName, destinationName) = CopyFiles[i];
+                var (fileId, sourceName, destinationName, file) = CopyFiles[i];
                 var component = FindFile(doc, fileId)?.Parent;
                 string? dirId = component == null ? null : DirectoryIdOf(component);
                 if (component == null || dirId == null)
                     throw new System.InvalidOperationException(
                         $"copyFiles '{destinationName}': cannot find the directory of the component that installs file Id '{fileId}'.");
+
+                // Directory Ids are case-sensitive; file names are not.
+                string key = dirId + "|" + destinationName.ToUpperInvariant();
+                if (destinations.TryGetValue(key, out int first))
+                {
+                    var prior = CopyFiles[first];
+                    throw new System.InvalidOperationException(
+                        $"copyFiles: destinationName '{destinationName}' is declared more than once in directory '{dirId}': " +
+                        $"entry {first + 1} ({prior.SourceName} -> {prior.DestinationName}, beside {prior.File}) and " +
+                        $"entry {i + 1} ({sourceName} -> {destinationName}, beside {file}).");
+                }
+                destinations[key] = i;
+                copyTargets.Add((component, dirId));
+            }
+
+            for (int i = 0; i < CopyFiles.Count; i++)
+            {
+                var (_, sourceName, destinationName, _) = CopyFiles[i];
+                var (component, dirId) = copyTargets[i];
 
                 // SourceDirectory + SourceName copies an existing file (MoveFile table, copy option).
                 component.Add(new XElement(Wix + "CopyFile",
