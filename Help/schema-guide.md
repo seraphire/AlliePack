@@ -338,6 +338,12 @@ The practical split:
 | Top-level `structure:`, `shortcuts:`, etc. | No (hidden root feature) | No (always installed) |
 | Inside a `features:` entry | Yes | Yes (subject to `default:`) |
 
+### A file shared by several features
+
+The same file can be listed in the `structure:` of more than one feature, when each of them needs it at the same destination. It becomes one component that every one of those features references: the file is installed when any of them is selected, and removed only when none of them is. If the file is also in the top-level `structure:`, it is always installed.
+
+This applies to `structure:` only. The same file in `groups:` of two features produces two components with the same id, and WiX fails with `WIX0091` (issue #57).
+
 ---
 
 ## Windows services
