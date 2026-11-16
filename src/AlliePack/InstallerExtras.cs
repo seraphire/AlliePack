@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Xml.Linq;
 
@@ -19,12 +19,13 @@ namespace AlliePack
         public List<(string FileId, string? Args, string Condition)> RunAfterInstall { get; } = new();
         public List<(string FileId, string Path, string? Name, string Value)> XmlEdits { get; } = new();
         public List<FileAssociation> FileAssociations { get; } = new();
+        public List<(string FileId, string SourceName, string DestinationName)> CopyFiles { get; } = new();
         public List<RequirementConfig> Requirements { get; } = new();
         public string? BannerBmp { get; set; }
         public string? DialogBmp { get; set; }
 
         public bool HasAny =>
-            LaunchOnExit != null || RunAfterInstall.Any() || XmlEdits.Any() || FileAssociations.Any()
+            LaunchOnExit != null || RunAfterInstall.Any() || XmlEdits.Any() || FileAssociations.Any() || CopyFiles.Any()
             || Requirements.Any() || BannerBmp != null || DialogBmp != null;
 
         public void Apply(XDocument doc)
@@ -99,6 +100,30 @@ namespace AlliePack
                 component.Add(xmlFile);
             }
 
+            for (int i = 0; i < CopyFiles.Count; i++)
+            {
+                var (fileId, sourceName, destinationName) = CopyFiles[i];
+                var component = FindFile(doc, fileId)?.Parent;
+                string? dirId = component == null ? null : DirectoryIdOf(component);
+                if (component == null || dirId == null)
+                    throw new System.InvalidOperationException(
+                        $"copyFiles '{destinationName}': cannot find the directory of the component that installs file Id '{fileId}'.");
+
+                // SourceDirectory + SourceName copies an existing file (MoveFile table, copy option).
+                component.Add(new XElement(Wix + "CopyFile",
+                    new XAttribute("Id", "apCopy" + (i + 1)),
+                    new XAttribute("SourceDirectory", dirId),
+                    new XAttribute("SourceName", sourceName),
+                    new XAttribute("DestinationDirectory", dirId),
+                    new XAttribute("DestinationName", destinationName)));
+                // MoveFile copies are not tracked as installed files, so remove the copy explicitly.
+                component.Add(new XElement(Wix + "RemoveFile",
+                    new XAttribute("Id", "apCopyRemove" + (i + 1)),
+                    new XAttribute("Directory", dirId),
+                    new XAttribute("Name", destinationName),
+                    new XAttribute("On", "uninstall")));
+            }
+
             foreach (var assoc in FileAssociations)
             {
                 var component = FindFile(doc, assoc.FileId)?.Parent;
@@ -169,6 +194,16 @@ namespace AlliePack
             !string.IsNullOrWhiteSpace(req.Message)
                 ? req.Message!
                 : $"{req.Name} must be installed first. Install {req.Name}, then run this setup again.";
+
+        /// <summary>Directory Id a component installs into: its Directory attribute, or the nearest
+        /// enclosing Directory, DirectoryRef or StandardDirectory.</summary>
+        static string? DirectoryIdOf(XElement component)
+        {
+            if (component.Attribute("Directory") is XAttribute direct) return direct.Value;
+            var dir = component.Ancestors().FirstOrDefault(a =>
+                a.Name == Wix + "Directory" || a.Name == Wix + "DirectoryRef" || a.Name == Wix + "StandardDirectory");
+            return (string?)dir?.Attribute("Id");
+        }
 
         static XElement? FindFile(XDocument doc, string fileId) =>
             doc.Descendants(Wix + "File").FirstOrDefault(f => (string?)f.Attribute("Id") == fileId);

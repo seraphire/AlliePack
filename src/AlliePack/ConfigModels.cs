@@ -425,6 +425,11 @@ namespace AlliePack
         [YamlMember(Alias = "fileAssociations")]
         public List<FileAssociationConfig> FileAssociations { get; set; } = new();
 
+        // Copies of files already on the target machine (WiX CopyFile, MoveFile table),
+        // made at install and removed on uninstall.
+        [YamlMember(Alias = "copyFiles")]
+        public List<CopyFileConfig> CopyFiles { get; set; } = new();
+
         // Software that must already be installed.  Each entry becomes an AppSearch
         // (RegistrySearch, optionally with a FileSearch) and a LaunchCondition.
         [YamlMember(Alias = "requires")]
@@ -523,6 +528,23 @@ namespace AlliePack
     // HKCU Software\Classes depending on scope) by the component that installs
     // file:, so they follow that file's feature and are removed on uninstall.
     // -----------------------------------------------------------------------
+
+    public class CopyFileConfig
+    {
+        // Installed file whose component carries the copy, e.g. [INSTALLDIR]\\MyApp.exe.  The copy
+        // follows that file's feature, and both names below are in that file's directory.
+        [YamlMember(Alias = "file")]
+        public string File { get; set; } = string.Empty;
+
+        // Existing file to copy (not part of the install), e.g. "VB6.EXE".  If it is missing at
+        // install time, Windows Installer skips the copy.
+        [YamlMember(Alias = "sourceName")]
+        public string SourceName { get; set; } = string.Empty;
+
+        // Name of the copy.  Removed on uninstall.
+        [YamlMember(Alias = "destinationName")]
+        public string DestinationName { get; set; } = string.Empty;
+    }
 
     public class FileAssociationConfig
     {
