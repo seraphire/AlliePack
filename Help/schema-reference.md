@@ -202,6 +202,7 @@ List of `StructureElement` entries defining the installed file tree under `INSTA
 | `excludeProjects` | list | Project names to exclude from a solution. |
 | `excludeFiles` | list | Glob patterns applied to the resolved file list. **Defaults always excluded:** `**/.vs/**`, `**/.git/**`, `**/*.suo`, `**/*.user` (VS scratch state and user-specific files that should never ship in an installer). Your patterns are additive on top of these. |
 | `onEmpty` | string | What to do if no files are found: `warn` (default), `error`, or `ignore`. |
+| `sign` | string | `always`, `ifUnsigned` or `never` for this entry's files. Inherited by `contents`; omitted means `signing.files.mode` decides. See [Signing](signing.md#signing-set-on-entries-sign). |
 | `contents` | list | Nested `StructureElement` list for subdirectories. |
 
 ### Source field syntax
@@ -433,6 +434,7 @@ an uninstall rule -- rather than plain placement in the install tree.
 | `destinationDir` | string | A `directories[].id`, or a bracketed WiX path written inline: `[INSTALLDIR]`, `[INSTALLDIR]\Help`, `[CommonAppDataFolder]\Acme` |
 | `condition` | string | `notExists` — skip file if destination already exists |
 | `permanent` | bool | `true` — file survives uninstall |
+| `sign` | string | `always`, `ifUnsigned` or `never` for this group's files; omitted means `signing.files.mode` decides |
 | `files` | list | List of `{ source, rename? }` entries |
 
 ---
@@ -494,9 +496,11 @@ Conditional maps are supported on: `product.installScope`, `product.installDir`,
 | `command` | string | Shell command; `{file}` is replaced with the file path |
 | `timestampUrl` | string | RFC 3161 timestamp server URL |
 | `signToolPath` | string | Explicit path to `signtool.exe`. Auto-discovered when omitted. |
-| `files` | block | Sign packaged files before WiX packages them |
+| `inPlace` | bool | `false` (default): sign copies in `obj\AlliePack\<config>\signed` and package those. `true`: sign the source files. |
+| `files` | block | How packaged files are signed (`mode`) and which may be (`include`, `exclude`) |
+| `package` | block | Whether the MSI is signed, and optionally a different key for it |
 
-Exactly one of `thumbprint`, `pfx`, `azure`, or `command` is required.
+At most one of `thumbprint`, `pfx`, `azure`, or `command`. With none, AlliePack uses the only code-signing certificate in `CurrentUser\My` and fails if there is none or more than one.
 
 ### `signing.azure:`
 
@@ -512,9 +516,17 @@ Exactly one of `thumbprint`, `pfx`, `azure`, or `command` is required.
 
 | Field | Type | Notes |
 |---|---|---|
-| `mode` | string | `unsigned` (default) — skip already-signed files. `all` — sign everything. |
-| `include` | list | Filename globs. When omitted, the Windows SIP table determines what is signable. |
-| `exclude` | list | Filename globs always excluded after the include/SIP check. |
+| `mode` | string | `always`, `ifUnsigned` (default) or `never`: the default for entries without `sign:`. `unsigned` and `all` are accepted for `ifUnsigned` and `always`. `--sign-files` overrides it and every `sign:`. |
+| `include` | list | Filename globs. When omitted, the Windows SIP table determines what is signable. Applies whatever `mode` or `sign:` says. |
+| `exclude` | list | Filename globs always excluded after the include/SIP check, whatever `mode` or `sign:` says. |
+
+### `signing.package:`
+
+| Field | Type | Notes |
+|---|---|---|
+| `sign` | bool | Sign the MSI. Default `true` whenever a `signing:` block exists. `--sign-package` overrides it. |
+| `thumbprint`, `pfx`, `pfxPassword`, `azure`, `command` | | Optional: a different key for the MSI, as in `signing:`. With none, the MSI uses the files' key. |
+| `timestampUrl`, `signToolPath` | string | Taken from `signing:` when omitted. |
 
 See [Signing](signing.md) for the full reference.
 

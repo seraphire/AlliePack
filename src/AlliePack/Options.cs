@@ -52,8 +52,31 @@ namespace AlliePack
         [Option("strict", Required = false,
             HelpText = "Turn warnings about things that build but will fail at install time into errors. " +
                        "Currently: installScope: perUser content that needs admin rights " +
-                       "(per-machine paths, HKLM/HKU registry, machine environment variables, services).")]
+                       "(per-machine paths, HKLM/HKU registry, machine environment variables, services), " +
+                       "and a file reached from entries with different sign: values.")]
         public bool Strict { get; set; }
+
+        [Option("sign-files", Required = false,
+            HelpText = "How packaged files are signed: always | ifUnsigned | never. Overrides signing.files.mode " +
+                       "and every entry's sign:. Turns signing on even when the config has no signing: block.")]
+        public string? SignFiles { get; set; }
+
+        [Option("sign-package", Required = false,
+            HelpText = "Sign the MSI: yes | no. Overrides signing.package.sign.")]
+        public string? SignPackage { get; set; }
+
+        [Option("sign-cert", Required = false,
+            HelpText = "SHA1 thumbprint of a certificate in the CurrentUser\\My store. " +
+                       "Replaces the provider in signing: and in signing.package: (thumbprint, pfx, azure or command).")]
+        public string? SignCert { get; set; }
+
+        [Option("no-sign", Required = false,
+            HelpText = "Sign nothing, even when the config has a signing: block. Same as --sign-files never --sign-package no.")]
+        public bool NoSign { get; set; }
+
+        [Option("sign-in-place", Required = false,
+            HelpText = "Sign packaged files where they are instead of signing copies. Same as signing.inPlace: true.")]
+        public bool SignInPlace { get; set; }
 
         [Option("debug", Required = false,
             HelpText = "Enable diagnostic output: resolved config values, alias expansions, " +

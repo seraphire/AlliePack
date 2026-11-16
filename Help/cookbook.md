@@ -171,7 +171,7 @@ The executable must be built before AlliePack runs.
 
 ## Signing the MSI
 
-Add a `signing:` block with your preferred provider. The MSI is signed after WiX builds it.
+Add a `signing:` block with your preferred provider. By default (`files.mode: ifUnsigned`) AlliePack signs copies of the packaged files that have no signature yet, then the MSI after WiX builds it. Use `files.mode: never` to sign only the MSI, or `package.sign: false` to sign only the files.
 
 **Certificate store (thumbprint):** best for automated builds where the cert is installed on the build machine:
 
@@ -212,19 +212,18 @@ See [Signing](signing.md) for the full guide including per-file signing and loca
 
 ## Signing packaged files before packaging
 
-To sign `.exe` and `.dll` files before WiX bundles them into the MSI, add a `files:` subsection:
+Packaged files are signed by default (see above). A `files:` subsection limits which files may be signed, and `sign:` on a `structure:` or `groups:` entry sets it per entry:
 
 ```yaml
 signing:
   thumbprint: "ABCDEF1234567890ABCDEF1234567890ABCDEF12"
   timestampUrl: "http://timestamp.digicert.com"
   files:
-    mode: unsigned                  # skip files that are already signed
     include: ["*.exe", "*.dll"]
     exclude: ["*.resources.dll"]    # skip satellite assemblies
 ```
 
-The signing order is always: sign files → build MSI → sign MSI.
+The signing order is always: copy and sign files, then build the MSI, then sign the MSI. Source files are not modified unless `inPlace: true` is set.
 
 ---
 

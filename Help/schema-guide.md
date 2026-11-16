@@ -375,11 +375,13 @@ For services that depend on each other (or on third-party services), use `depend
 
 ## Signing order
 
-When `signing.files:` is configured, AlliePack signs packaged files **before** WiX packages them into the MSI. This is the industry-standard approach — the MSI then contains already-signed binaries, and the MSI itself is signed afterward.
+AlliePack signs packaged files **before** WiX packages them into the MSI (which files is set by `signing.files.mode` and `sign:` on entries). This is the industry-standard approach: the MSI then contains already-signed binaries, and the MSI itself is signed afterward.
 
 ```
-sign files in-place  ->  build MSI  ->  sign MSI
+copy files to obj\AlliePack\<config>\signed  ->  sign copies  ->  build MSI  ->  sign MSI
 ```
+
+With `signing.inPlace: true` the source files are signed instead of copies.
 
 See [Signing](signing.md) for the full signing reference.
 

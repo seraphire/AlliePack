@@ -582,11 +582,15 @@ namespace AlliePack
     //   azure       -- Azure Trusted Signing (calls signtool + Azure dlib)
     //   command     -- arbitrary shell command; use {file} as the path placeholder
     //
-    // timestampUrl, signToolPath, and files: apply to all signtool-based
-    // providers (thumbprint, pfx, azure).  They are ignored for command:.
+    // timestampUrl and signToolPath apply to the signtool-based providers
+    // (thumbprint, pfx, azure).  They are ignored for command:.
+    //
+    // files: says how packaged files are signed (mode, include, exclude);
+    // package: says whether the MSI is signed, and may name a different key.
     // -----------------------------------------------------------------------
 
-    public class SigningConfig
+    // The provider fields shared by signing: and signing.package:.
+    public class SigningProviderConfig
     {
         // SHA1 thumbprint of a certificate already installed in the Windows cert store.
         [YamlMember(Alias = "thumbprint")]
@@ -620,11 +624,43 @@ namespace AlliePack
         // locations when omitted.  Not used by command:.
         [YamlMember(Alias = "signToolPath")]
         public string? SignToolPath { get; set; }
+    }
 
-        // Optional: sign individual files before packaging them into the MSI.
-        // When absent, only the MSI itself is signed.
+    public class SigningConfig : SigningProviderConfig
+    {
+        // false (default): copy the files to sign into obj\AlliePack\<config name>\signed
+        // under the config's folder, sign the copies and package the copies; sources are untouched.
+        // true: sign the source files where they are.  --sign-in-place sets it.
+        [YamlMember(Alias = "inPlace")]
+        public bool InPlace { get; set; }
+
+        // How packaged files are signed: mode (the default for entries without sign:)
+        // and the include/exclude filters, which apply whatever mode or sign: says.
         [YamlMember(Alias = "files")]
         public FileSigningConfig? Files { get; set; }
+
+        // Whether the MSI is signed, and optionally with a different key.
+        [YamlMember(Alias = "package")]
+        public PackageSigningConfig? Package { get; set; }
+    }
+
+    // -----------------------------------------------------------------------
+    // Installer signing (signing.package:)
+    //
+    //   signing:
+    //     thumbprint: "AAAA..."        # files, and the MSI unless package names its own
+    //     package:
+    //       sign: true                 # default true whenever a signing: block exists
+    //       thumbprint: "BBBB..."      # optional; pfx, azure or command also allowed
+    //
+    // A package provider that leaves timestampUrl or signToolPath out takes the
+    // signing: block's.  Later the same block covers a setup.exe bundle.
+    // -----------------------------------------------------------------------
+
+    public class PackageSigningConfig : SigningProviderConfig
+    {
+        [YamlMember(Alias = "sign")]
+        public bool Sign { get; set; } = true;
     }
 
     // -----------------------------------------------------------------------
@@ -674,12 +710,14 @@ namespace AlliePack
     //   signing:
     //     thumbprint: "ABCDEF..."
     //     files:
-    //       mode: unsigned              # all | unsigned (default)
+    //       mode: ifUnsigned            # always | ifUnsigned (default) | never
     //       include: ["*.exe", "*.dll"] # filename globs; SIP check used when omitted
     //       exclude: ["*.resources.dll"]
     //
-    // mode: unsigned  -- skip files that already carry an Authenticode signature
-    // mode: all       -- sign every candidate regardless of existing signature
+    // mode is the default for entries without sign:.
+    //   ifUnsigned -- skip files that already carry an Authenticode signature (alias: unsigned)
+    //   always     -- sign every candidate, replacing any signature (alias: all)
+    //   never      -- sign only entries marked sign:
     //
     // When include is omitted, AlliePack calls CryptSIPRetrieveSubjectGuid to
     // ask Windows whether each file is signable -- the same check signtool
@@ -688,9 +726,9 @@ namespace AlliePack
 
     public class FileSigningConfig
     {
-        // "all" | "unsigned" (default)
+        // always | ifUnsigned | never; null means ifUnsigned.
         [YamlMember(Alias = "mode")]
-        public string Mode { get; set; } = "unsigned";
+        public string? Mode { get; set; }
 
         // Filename glob patterns.  When null (omitted) the SIP check is the gate.
         [YamlMember(Alias = "include")]
@@ -830,6 +868,11 @@ namespace AlliePack
         // permanent: true -- file survives uninstall (Component:Permanent=yes)
         [YamlMember(Alias = "permanent")]
         public bool Permanent { get; set; }
+
+        // always | ifUnsigned | never.  Overrides signing.files.mode for this group's
+        // files; omitted means signing.files.mode decides.
+        [YamlMember(Alias = "sign")]
+        public string? Sign { get; set; }
 
         [YamlMember(Alias = "files")]
         public List<FileGroupItem> Files { get; set; } = new();
@@ -1050,6 +1093,11 @@ namespace AlliePack
         //   ignore -- silently skip
         [YamlMember(Alias = "onEmpty")]
         public string OnEmpty { get; set; } = "warn";
+
+        // always | ifUnsigned | never.  Overrides signing.files.mode for this entry's
+        // files and is inherited by its contents:; the nearest setting wins.
+        [YamlMember(Alias = "sign")]
+        public string? Sign { get; set; }
 
         [YamlMember(Alias = "contents")]
         public List<StructureElement>? Contents { get; set; }
