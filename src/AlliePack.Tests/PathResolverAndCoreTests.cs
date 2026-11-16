@@ -195,6 +195,28 @@ namespace AlliePack.Tests
             Assert.All(results, r => Assert.EndsWith(".dll", r));
         }
 
+        [Fact] public void ExcludedDir_IsSkippedByGlobs()
+        {
+            Touch(@"bin\app.dll");
+            Touch(@"obj\AlliePack\test\signed\1\app.dll");
+            var r = MakeResolver();
+            r.ExcludeFromGlobs(Path.Combine(_tempDir, @"obj\AlliePack\test\signed"));
+
+            var results = r.ResolveGlob(Path.Combine(_tempDir, @"**\*.dll"));
+            Assert.Single(results);
+            Assert.EndsWith(@"bin\app.dll", results[0]);
+
+            Assert.Empty(r.ResolveGlob(Path.Combine(_tempDir, @"obj\AlliePack\test\signed\1\*.dll")));
+        }
+
+        [Fact] public void ExcludedDir_DoesNotSkipASiblingWithTheSamePrefix()
+        {
+            Touch(@"signed-extra\a.dll");
+            var r = MakeResolver();
+            r.ExcludeFromGlobs(Path.Combine(_tempDir, "signed"));
+            Assert.Single(r.ResolveGlob(Path.Combine(_tempDir, @"**\*.dll")));
+        }
+
         [Fact] public void DoubleStar_MatchesNestedFiles()
         {
             Touch(@"bin\Release\net48\app.dll");

@@ -21,6 +21,17 @@ namespace AlliePack
         /// <summary>The config file's name without extension.</summary>
         public string YamlFileStem { get; }
 
+        // Folders AlliePack writes into (signed copies).  A glob never matches files
+        // under them, so a recursive pattern does not pick up its own copies.
+        private readonly List<string> _excludedRoots = new List<string>();
+
+        /// <summary>Glob matches under <paramref name="dir"/> are dropped.</summary>
+        public void ExcludeFromGlobs(string dir) =>
+            _excludedRoots.Add(Path.GetFullPath(dir).TrimEnd('\\', '/') + Path.DirectorySeparatorChar);
+
+        private bool IsExcluded(string fullPath) =>
+            _excludedRoots.Any(r => fullPath.StartsWith(r, StringComparison.OrdinalIgnoreCase));
+
         /// <summary>
         /// Plain token substitution without path normalization.
         /// Use this for non-path string fields (e.g. MSBuild configuration,
@@ -136,6 +147,7 @@ namespace AlliePack
                         string relativePath = f.Path.Replace('/', Path.DirectorySeparatorChar);
                         return (Path.Combine(baseDir, relativePath), relativePath);
                     })
+                    .Where(t => !IsExcluded(Path.GetFullPath(t.Item1)))
                     .ToList();
             }
 
@@ -145,6 +157,7 @@ namespace AlliePack
             if (dir == null || !Directory.Exists(dir)) return new List<(string, string)>();
 
             return Directory.GetFiles(dir, filePat)
+                .Where(f => !IsExcluded(Path.GetFullPath(f)))
                 .Select(f => (f, Path.GetFileName(f)))
                 .ToList();
         }

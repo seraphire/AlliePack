@@ -36,6 +36,11 @@ namespace AlliePack
             _solutionResolver = solutionResolver;
             _options = options;
             _activeFlags = activeFlags;
+            // Signed copies go in one of these; keep them out of every glob, so a
+            // recursive pattern picks up neither this build's copies nor the last's.
+            _resolver.ExcludeFromGlobs(SigningStagingDir(exporting: false));
+            if (_options.ExportWxs)
+                _resolver.ExcludeFromGlobs(SigningStagingDir(exporting: true));
         }
 
         public void Build()
@@ -168,9 +173,7 @@ namespace AlliePack
                 _signPlan = SigningHelper.PlanFiles(CollectSignCandidates(uniqueFiles), _signing, _options.IsVerbose, _options.Strict);
                 if (!_options.ReportOnly && !_signing.InPlace && _signPlan.Files.Count > 0)
                 {
-                    string stagingDir = _options.ExportWxs
-                        ? Path.Combine(GetExportDir(), "signed")
-                        : Path.Combine(_resolver.YamlDirectory, "obj", "AlliePack", _resolver.YamlFileStem, "signed");
+                    string stagingDir = SigningStagingDir(_options.ExportWxs);
                     SigningHelper.StageCopies(_signPlan, stagingDir);
                     Debug($"signing: staged {_signPlan.Files.Count} file(s) in {stagingDir}");
                     foreach (var f in uniqueFiles)
@@ -912,6 +915,10 @@ namespace AlliePack
             Console.WriteLine($"  .\\build.ps1 -Version 1.0.0.0");
             Console.WriteLine($"  {exampleCmd}");
         }
+
+        private string SigningStagingDir(bool exporting) => exporting
+            ? Path.Combine(GetExportDir(), "signed")
+            : Path.Combine(_resolver.YamlDirectory, "obj", "AlliePack", _resolver.YamlFileStem, "signed");
 
         private string GetExportDir() =>
             !string.IsNullOrEmpty(_options.OutputPath)
@@ -1750,9 +1757,14 @@ foreach ($f in $signFiles) {
     $src = Resolve-Here $f.Source
     $dst = Resolve-Here $f.Path
     if (Test-Path -LiteralPath $src) {
-        New-Item -ItemType Directory -Force -Path (Split-Path $dst) | Out-Null
-        Copy-Item -LiteralPath $src -Destination $dst -Force
-        Set-ItemProperty -LiteralPath $dst -Name IsReadOnly -Value $false
+        try {
+            New-Item -ItemType Directory -Force -Path (Split-Path $dst) -ErrorAction Stop | Out-Null
+            Copy-Item -LiteralPath $src -Destination $dst -Force -ErrorAction Stop
+            Set-ItemProperty -LiteralPath $dst -Name IsReadOnly -Value $false -ErrorAction Stop
+        } catch {
+            Write-Host ""Could not copy $($f.Source) to $($f.Path): $_""
+            exit 1
+        }
     } elseif (Test-Path -LiteralPath $dst) {
         Write-Host ""Warning: $($f.Source) not found; packaging the copy made at export time.""
     } else {
@@ -1764,7 +1776,11 @@ foreach ($f in $signFiles) {
 
         private const string PsSignSetup = @"
 function Find-SignTool {
-    if ($SignTool) { return $SignTool }
+    if ($SignTool) {
+        if (Test-Path -LiteralPath $SignTool -PathType Leaf) { return $SignTool }
+        Write-Host ""-SignTool not found: $SignTool""
+        exit 1
+    }
     $cmd = Get-Command signtool.exe -ErrorAction SilentlyContinue
     if ($cmd) { return $cmd.Source }
     foreach ($root in @(""${env:ProgramFiles(x86)}\Windows Kits\10\bin"", ""$env:ProgramFiles\Windows Kits\10\bin"")) {
@@ -1779,10 +1795,23 @@ function Find-SignTool {
     return $null
 }
 
+# An embedded signature only, as AlliePack itself checks.  Get-AuthenticodeSignature
+# also reports catalog signatures, which do not travel with a copied file.
+function Test-EmbeddedSignature([string]$p) {
+    try { [void][System.Security.Cryptography.X509Certificates.X509Certificate]::CreateFromSignedFile($p); return $true }
+    catch { return $false }
+}
+
 # Stops at the first failure: on a hardware token every failed attempt can use
 # up one of the token's password retries.
 function Invoke-Sign([string[]]$files) {
-    & $signToolExe @signArgs @files
+    $global:LASTEXITCODE = 0
+    try {
+        & $signToolExe @signArgs @files
+    } catch {
+        Write-Host ""signtool could not be run ($signToolExe): $_""
+        exit 1
+    }
     if ($LASTEXITCODE -ne 0) {
         Write-Host ""signtool failed (exit $LASTEXITCODE). Stopped at the first failure.""
         exit $LASTEXITCODE
@@ -1822,7 +1851,7 @@ if (-not $SkipSigning) {
     $toSign = @()
     foreach ($f in $signFiles) {
         $p = Resolve-Here $f.Path
-        if ($f.Mode -eq 'ifUnsigned' -and (Get-AuthenticodeSignature -LiteralPath $p).Status -ne 'NotSigned') {
+        if ($f.Mode -eq 'ifUnsigned' -and (Test-EmbeddedSignature $p)) {
             Write-Host ""Already signed: $($f.Path)""
             continue
         }

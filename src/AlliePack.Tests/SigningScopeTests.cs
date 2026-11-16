@@ -151,6 +151,18 @@ namespace AlliePack.Tests
         }
 
         [Fact]
+        public void Script_FailuresStopTheScript_AndIfUnsignedIgnoresCatalogs()
+        {
+            var rows = new List<(string, string, string)> { ("src\\a.dll", @"signed\1\a.dll", "ifUnsigned") };
+            var parts = InstallerBuilder.ComposeSigningScript(rows, new SigningConfig { Thumbprint = "AAA" }, null);
+            Assert.Contains("Copy-Item -LiteralPath $src -Destination $dst -Force -ErrorAction Stop", parts.PreBuild);
+            Assert.Contains("signtool could not be run", parts.PreBuild);
+            Assert.Contains("-SignTool not found", parts.PreBuild);
+            Assert.Contains("Test-EmbeddedSignature $p", parts.PreBuild);
+            Assert.DoesNotContain("Get-AuthenticodeSignature -LiteralPath", parts.PreBuild);
+        }
+
+        [Fact]
         public void Script_UnsupportedPackageKey_SkipSigningStillReminds()
         {
             var rows = new List<(string, string, string)> { ("a.dll", @"signed\1\a.dll", "always") };
