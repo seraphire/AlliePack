@@ -306,7 +306,7 @@ source is missing at install time, Windows Installer skips the copy.
 
 ```yaml
 copyFiles:
-  - file: "[INSTALLDIR]\VB6Ex.exe"
+  - file: '[INSTALLDIR]\VB6Ex.exe'
     sourceName: "VB6.EXE"
     destinationName: "VB6Ex-Host.exe"
 ```
