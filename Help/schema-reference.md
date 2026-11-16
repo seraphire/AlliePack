@@ -291,6 +291,28 @@ xmlEdits:
 
 ---
 
+## `copyFiles:`
+
+Copy a file that is already on the target machine, but not part of the install, to a new name in
+the same folder.  Emits a WiX `CopyFile` (MoveFile table, copy option) plus a `RemoveFile` on
+uninstall, in the component that installs `file`, so the copy follows that file's feature.  If the
+source is missing at install time, Windows Installer skips the copy.
+
+| Field | Type | Notes |
+|---|---|---|
+| `file` | string | Required. An installed file; the copy is made in its folder, e.g. `[INSTALLDIR]\MyApp.exe` |
+| `sourceName` | string | Required. File name (not a path) of the existing file in that folder. |
+| `destinationName` | string | Required. File name of the copy. Removed on uninstall. |
+
+```yaml
+copyFiles:
+  - file: '[INSTALLDIR]\VB6Ex.exe'
+    sourceName: "VB6.EXE"
+    destinationName: "VB6Ex-Host.exe"
+```
+
+---
+
 ## `fileAssociations:`
 
 Register a file extension to an installed program.  Emits a non-advertised WiX

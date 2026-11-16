@@ -652,6 +652,12 @@ namespace AlliePack
                         : new List<FileAssociationVerbConfig> { new FileAssociationVerbConfig { Label = "&Open" } },
                 });
             }
+            ValidateCopyFiles(_config.CopyFiles);
+            foreach (var cf in _config.CopyFiles)
+            {
+                if (PinFileId(cf.File, $"copyFiles '{cf.DestinationName}'") is string id)
+                    extras.CopyFiles.Add((id, cf.SourceName, cf.DestinationName, cf.File));
+            }
             ValidateRequirements(_config.Requires);
             extras.Requirements.AddRange(_config.Requires);
             if (!useCustomUi)
@@ -2070,6 +2076,28 @@ Write-Host ""Done: $msiPath""
             return si;
         }
 
+        // Duplicate destinations are checked in InstallerExtras.Apply, against the resolved
+        // directory of each anchor file; the anchor paths here cannot show that two different
+        // files share a directory.
+        internal static void ValidateCopyFiles(List<CopyFileConfig> copies)
+        {
+            foreach (var cf in copies)
+            {
+                string label = $"copyFiles '{cf.DestinationName}'";
+                if (string.IsNullOrWhiteSpace(cf.File))
+                    throw new InvalidOperationException($"{label}: file: is required.");
+                foreach (var (field, value) in new[] { ("sourceName", cf.SourceName), ("destinationName", cf.DestinationName) })
+                {
+                    if (string.IsNullOrWhiteSpace(value))
+                        throw new InvalidOperationException($"{label}: {field}: is required.");
+                    if (value.IndexOfAny(new[] { '\\', '/' }) >= 0)
+                        throw new InvalidOperationException($"{label}: {field}: '{value}' must be a file name, not a path.");
+                }
+                if (string.Equals(cf.SourceName, cf.DestinationName, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException($"{label}: sourceName and destinationName must differ.");
+            }
+        }
+
         internal static void ValidateFileAssociations(List<FileAssociationConfig> associations)
         {
             var extensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -3272,6 +3300,13 @@ Write-Host ""Done: $msiPath""
                     if (!fa.Verbs.Any())
                         Console.WriteLine("    open: \"%1\" (default)");
                 }
+            }
+
+            if (_config.CopyFiles.Any())
+            {
+                Console.WriteLine("Copy Files (existing files copied at install, removed on uninstall):");
+                foreach (var cf in _config.CopyFiles)
+                    Console.WriteLine($"  {cf.SourceName} -> {cf.DestinationName}  (beside {cf.File})");
             }
 
             if (_config.Requires.Any())
