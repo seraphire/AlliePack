@@ -112,6 +112,55 @@ namespace AlliePack.Tests
         }
 
         [Fact]
+        public void PackageTimestamp_WithoutItsOwnKey_IsStillUsed()
+        {
+            var cfg = new SigningConfig
+            {
+                Thumbprint = "AA", TimestampUrl = "http://ts",
+                Package = new PackageSigningConfig { TimestampUrl = "http://ts2", SignToolPath = @"C:\st.exe" },
+            };
+            var s = SigningHelper.ApplyOverrides(cfg, new Options());
+            Assert.True(s!.PackageInherits);
+            Assert.Equal("AA", s.Package.Thumbprint);
+            Assert.Equal("http://ts2", s.Package.TimestampUrl);
+            Assert.Equal(@"C:\st.exe", s.Package.SignToolPath);
+            Assert.Equal("http://ts", s.Provider.TimestampUrl);
+        }
+
+        [Fact]
+        public void SignCert_KeepsThePackagesOwnTimestamp()
+        {
+            var cfg = new SigningConfig
+            {
+                TimestampUrl = "http://ts",
+                Package = new PackageSigningConfig { Thumbprint = "BB", TimestampUrl = "http://ts2" },
+            };
+            var s = SigningHelper.ApplyOverrides(cfg, new Options { SignCert = CertC });
+            Assert.Equal(CertC, s!.Package.Thumbprint);
+            Assert.Equal("http://ts2", s.Package.TimestampUrl);
+        }
+
+        [Fact]
+        public void Script_PackageTimestamp_ExportedOnlyWhenWritten()
+        {
+            var rows = new List<(string, string, string)> { ("a.dll", @"signed\1\a.dll", "always") };
+            var parts = InstallerBuilder.ComposeSigningScript(
+                rows, new SigningConfig { Thumbprint = "AAA", TimestampUrl = "http://ts" },
+                new SigningConfig { Thumbprint = "BBB", TimestampUrl = "http://ts" }, packageInherits: false);
+            Assert.Contains("[string]$PackageTimestampUrl = ''", parts.Params);
+        }
+
+        [Fact]
+        public void Script_UnsupportedPackageKey_SkipSigningStillReminds()
+        {
+            var rows = new List<(string, string, string)> { ("a.dll", @"signed\1\a.dll", "always") };
+            var parts = InstallerBuilder.ComposeSigningScript(
+                rows, new SigningConfig { Thumbprint = "AAA" }, new SigningConfig { Pfx = "p.pfx" }, packageInherits: false);
+            Assert.DoesNotContain("$msiPath", parts.PostBuild);
+            Assert.Contains("SkipSigning", parts.PostBuild);
+        }
+
+        [Fact]
         public void PackageBlockWithoutKey_InheritsTheFilesKey()
         {
             var cfg = new SigningConfig { Pfx = "f.pfx", Package = new PackageSigningConfig() };
@@ -721,12 +770,13 @@ namespace AlliePack.Tests
             var rows = new List<(string, string, string)> { ("a.dll", @"signed\1\a.dll", "always") };
             var files = new SigningConfig { Thumbprint = "AAA" };
             var package = new SigningConfig { Thumbprint = "BBB", TimestampUrl = "http://ts2" };
-            var parts = InstallerBuilder.ComposeSigningScript(rows, files, package, packageInherits: false);
+            var parts = InstallerBuilder.ComposeSigningScript(rows, files, package, packageInherits: false,
+                                                              packageTimestampUrl: "http://ts2");
 
             Assert.Contains("[string]$Thumbprint = 'AAA'", parts.Params);
             Assert.Contains("[string]$PackageThumbprint = 'BBB'", parts.Params);
             Assert.Contains("[string]$PackageTimestampUrl = 'http://ts2'", parts.Params);
-            Assert.Contains("New-SignArgs $PackageThumbprint", parts.PostBuild);
+            Assert.Contains("if ($PackageThumbprint) { $pkgTp = $PackageThumbprint }", parts.PostBuild);
         }
 
         [Fact]

@@ -24,6 +24,8 @@ namespace AlliePack
         internal SigningConfig Package { get; set; } = new SigningConfig();
         // True when signing.package names no provider of its own, so the MSI uses Provider's key.
         internal bool PackageInherits { get; set; } = true;
+        // signing.package.timestampUrl as written, or null; build.ps1 falls back to -TimestampUrl.
+        internal string? PackageTimestampUrl { get; set; }
         internal bool SignPackage { get; set; }
         // The mode for files whose entries say no sign: (signing.files.mode or --sign-files).
         internal FileSignMode DefaultFileMode { get; set; }
@@ -162,17 +164,12 @@ namespace AlliePack
                 pkgOwn = false;   // --sign-cert replaces both keys
             }
 
+            // The MSI's key is the package's own, or the files' key.  Its timestampUrl and
+            // signToolPath are the package's when set, whichever key it uses, else the block's.
             var package = new SigningConfig();
-            if (pkgOwn)
-            {
-                CopyProvider(pkgConfig!, package);
-                package.TimestampUrl ??= files.TimestampUrl;
-                package.SignToolPath ??= files.SignToolPath;
-            }
-            else
-            {
-                CopyProvider(files, package);
-            }
+            CopyProvider(pkgOwn ? pkgConfig! : files, package);
+            package.TimestampUrl = pkgConfig?.TimestampUrl ?? files.TimestampUrl;
+            package.SignToolPath = pkgConfig?.SignToolPath ?? files.SignToolPath;
 
             FileSignMode mode =
                 cliMode
@@ -193,6 +190,7 @@ namespace AlliePack
                 Provider                = files,
                 Package                 = package,
                 PackageInherits         = !pkgOwn,
+                PackageTimestampUrl     = pkgConfig?.TimestampUrl,
                 SignPackage             = signPackage,
                 DefaultFileMode         = mode,
                 FileModeFromCommandLine = cliMode != null,

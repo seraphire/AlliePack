@@ -151,7 +151,7 @@ Whether the MSI is signed. Overrides `signing.package.sign`. Without a `signing:
 
 ### `--sign-cert <thumbprint>`
 
-SHA1 thumbprint (40 hex digits) of a certificate in `CurrentUser\My`; anything else is an error. Replaces whatever provider `signing:` and `signing.package:` name (`thumbprint`, `pfx`, `azure` or `command`), so the files and the MSI both use it. With no `signing:` block it also turns signing on: copies of packaged files without a signature, then the MSI; add `--sign-files never` to sign only the MSI. With a block, the block's `files.mode`, `package.sign` and `inPlace` still apply. Spaces and the invisible mark that certmgr adds when you copy a thumbprint are removed.
+SHA1 thumbprint (40 hex digits) of a certificate in `CurrentUser\My`; anything else is an error. Replaces whatever provider `signing:` and `signing.package:` name (`thumbprint`, `pfx`, `azure` or `command`), so the files and the MSI both use it. A `timestampUrl` set in `signing.package:` is kept. With no `signing:` block it also turns signing on: copies of packaged files without a signature, then the MSI; add `--sign-files never` to sign only the MSI. With a block, the block's `files.mode`, `package.sign` and `inPlace` still apply. Spaces and the invisible mark that certmgr adds when you copy a thumbprint are removed.
 
 ```
 AlliePack.exe allie-pack.yaml --sign-cert "ab cd ef ..."

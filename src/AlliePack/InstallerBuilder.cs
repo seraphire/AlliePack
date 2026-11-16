@@ -1654,7 +1654,8 @@ namespace AlliePack
             var rows = files.Select(f => (MakeRelativePath(exportDir, f.Source),
                                           MakeRelativePath(exportDir, f.Path),
                                           SigningHelper.Name(f.Mode))).ToList();
-            return ComposeSigningScript(rows, sig.Provider, sig.SignPackage ? sig.Package : null, sig.PackageInherits);
+            return ComposeSigningScript(rows, sig.Provider, sig.SignPackage ? sig.Package : null,
+                                        sig.PackageInherits, sig.PackageTimestampUrl);
         }
 
         private static bool ScriptSupports(SigningConfig p) =>
@@ -1666,13 +1667,16 @@ namespace AlliePack
         /// <summary>
         /// Builds the build.ps1 signing pieces from relative (Source, Path, Mode) rows.
         /// <paramref name="package"/> is the MSI's key, or null when the MSI is not signed;
-        /// <paramref name="packageInherits"/> says it is the files' key rather than its own.
+        /// <paramref name="packageInherits"/> says it is the files' key rather than its own;
+        /// <paramref name="packageTimestampUrl"/> is signing.package.timestampUrl as written, so
+        /// that an empty -PackageTimestampUrl follows -TimestampUrl at run time.
         /// </summary>
         internal static SigningScriptParts ComposeSigningScript(
             IReadOnlyList<(string Source, string Path, string Mode)> rows,
             SigningConfig files,
             SigningConfig? package,
-            bool packageInherits = true)
+            bool packageInherits = true,
+            string? packageTimestampUrl = null)
         {
             var parts = new SigningScriptParts();
             var sb = new StringBuilder();
@@ -1716,7 +1720,7 @@ namespace AlliePack
                 $",\n    [string]$Thumbprint = {PsQuote(files.Thumbprint ?? string.Empty)}" +
                 $",\n    [string]$TimestampUrl = {PsQuote(files.TimestampUrl ?? string.Empty)}" +
                 $",\n    [string]$PackageThumbprint = {PsQuote(packageInherits ? string.Empty : package?.Thumbprint ?? string.Empty)}" +
-                $",\n    [string]$PackageTimestampUrl = {PsQuote(packageInherits ? string.Empty : package?.TimestampUrl ?? string.Empty)}" +
+                $",\n    [string]$PackageTimestampUrl = {PsQuote(packageTimestampUrl ?? string.Empty)}" +
                 ",\n    [string]$SignTool = ''";
 
             sb.Append($"\n$signPackagedFiles = {(filesHere ? "$true" : "$false")}\n");
@@ -1724,7 +1728,7 @@ namespace AlliePack
             if (filesHere)
                 sb.Append(PsSignFilesBlock);
             parts.PreBuild = sb.ToString();
-            parts.PostBuild = packageHere ? PsSignMsiBlock : package == null ? PsSkipNoteBlock : string.Empty;
+            parts.PostBuild = packageHere ? PsSignMsiBlock : PsSkipNoteBlock;
             return parts;
         }
 
@@ -1847,11 +1851,11 @@ if (-not $SkipSigning) {
 
         private const string PsSignMsiBlock = @"
 if (-not $SkipSigning) {
-    if ($PackageThumbprint) {
-        $pkgTs = $TimestampUrl
-        if ($PackageTimestampUrl) { $pkgTs = $PackageTimestampUrl }
-        $signArgs = New-SignArgs $PackageThumbprint $pkgTs
-    }
+    $pkgTp = $Thumbprint
+    if ($PackageThumbprint) { $pkgTp = $PackageThumbprint }
+    $pkgTs = $TimestampUrl
+    if ($PackageTimestampUrl) { $pkgTs = $PackageTimestampUrl }
+    $signArgs = New-SignArgs $pkgTp $pkgTs
     Invoke-Sign @($msiPath)
     Write-Host ""Signed: $msiPath""
 } else {
@@ -3306,20 +3310,26 @@ Write-Host ""Done: $msiPath""
                 Console.WriteLine("Code Signing:");
                 Console.WriteLine($"  files     : default {SigningHelper.Name(sig.DefaultFileMode)}" +
                                   (sig.FileModeFromCommandLine ? " (--sign-files; entry sign: values ignored)" : ""));
-                Console.WriteLine($"  method    : {DescribeSigningMethod(p)}");
-                if (!string.IsNullOrEmpty(p.TimestampUrl))
-                    Console.WriteLine($"  timestamp : {p.TimestampUrl}");
-                if (!string.IsNullOrEmpty(p.SignToolPath))
-                    Console.WriteLine($"  signtool  : {p.SignToolPath}");
+                // The files' key is used only when files will be signed; otherwise the
+                // automatic choice is never made for it, so do not report on it.
+                bool filesKeyUsed = plan != null && plan.Files.Count > 0;
+                if (filesKeyUsed)
+                {
+                    Console.WriteLine($"  method    : {DescribeSigningMethod(p)}");
+                    if (!string.IsNullOrEmpty(p.TimestampUrl))
+                        Console.WriteLine($"  timestamp : {p.TimestampUrl}");
+                    if (!string.IsNullOrEmpty(p.SignToolPath))
+                        Console.WriteLine($"  signtool  : {p.SignToolPath}");
+                }
                 if (!sig.SignPackage)
                     Console.WriteLine("  package   : not signed");
-                else if (sig.PackageInherits)
-                    Console.WriteLine("  package   : signed, same key");
                 else
                 {
                     var k = sig.Package;
-                    Console.WriteLine($"  package   : signed with {DescribeSigningMethod(k)}");
-                    if (!string.IsNullOrEmpty(k.TimestampUrl) && k.TimestampUrl != p.TimestampUrl)
+                    Console.WriteLine(filesKeyUsed && sig.PackageInherits
+                        ? "  package   : signed, same key"
+                        : $"  package   : signed with {DescribeSigningMethod(k)}");
+                    if (!string.IsNullOrEmpty(k.TimestampUrl) && (!filesKeyUsed || k.TimestampUrl != p.TimestampUrl))
                         Console.WriteLine($"    timestamp: {k.TimestampUrl}");
                 }
                 if (plan != null)
